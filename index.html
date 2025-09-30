@@ -33,24 +33,28 @@
 
   <style>
     html, body { height: 100%; margin: 0; }
-    /* Position relative so absolutely-positioned children stick in fullscreen */
     #map { width: 100%; height: 100vh; position: relative; }
 
-    /* Unified search toolbar (now INSIDE #map, so it shows in fullscreen) */
+    /* One-line toolbar: no-wrap, full width, horizontal scroll on overflow */
     .toolbar {
-      position: absolute; z-index: 1000; top: 10px; left: 140px; /* scooted right */
-      background: #fff; border-radius: 10px; padding: 8px 10px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 14px system-ui, sans-serif;
-      display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
-      max-width: min(95vw, 760px);
+      position: absolute; z-index: 1000; top: 10px; left: 60px; right: 10px;
+      background: #fff; border-radius: 12px; padding: 8px 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.18); font: 14px system-ui, sans-serif;
+
+      display: flex; align-items: center; gap: 8px;
+      flex-wrap: nowrap;               /* <- no wrapping */
+      white-space: nowrap;             /* <- keep everything on one line */
+      overflow-x: auto; overflow-y: hidden;  /* <- allow horizontal scroll if needed */
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
     }
     .toolbar select, .toolbar input, .toolbar button {
-      padding: 6px 8px; border: 1px solid #ddd; border-radius: 8px;
+      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px;
+      flex: 0 0 auto; /* prevent flex growing/shrinking unpredictably */
     }
-    .toolbar button { background: #f7f7f7; cursor: pointer; }
-    .toolbar button:hover { background: #eee; }
-    .toolbar .spacer { width: 6px; }
-    .toolbar .group { display: flex; gap: 6px; align-items: center; }
+    /* Make the main query field flexible but keep it one-line */
+    #q { min-width: 320px; flex: 1 1 420px; }
+    .toolbar .spacer { width: 6px; flex: 0 0 auto; }
 
     /* Info panel (pin details) */
     .info {
@@ -62,7 +66,6 @@
     .info h4 { margin: 0 0 6px 0; font-size: 14px; }
     .info .row { margin: 4px 0; }
     .info code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
-    .hidden { display: none; }
 
     /* Polygon metrics panel */
     .metrics {
@@ -75,42 +78,38 @@
     .metrics .row { margin: 4px 0; }
     .metrics code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
 
+    /* Keep one line even on small screens; user can horizontal-scroll the bar */
     @media (max-width: 640px) {
-      .toolbar { left: 100px; }
+      #q { min-width: 260px; flex-basis: 300px; }
     }
   </style>
 </head>
 <body>
-<!-- Everything lives INSIDE the map container -->
 <div id="map">
-  <!-- Unified Search + Drawing toolbar -->
+  <!-- Unified Search + Drawing toolbar (single line) -->
   <div class="toolbar">
-    <div class="group">
-      <select id="mode">
-        <option value="postcode">Postcode / Address</option>
-        <option value="latlon">Lat, Lon</option>
-        <option value="en">Easting, Northing</option>
-      </select>
-      <input id="q" type="text" style="width:320px"
-            placeholder="SY3 0NS  |  52.677027, -2.773167  |  349000, 306000" />
-      <button id="go">Search</button>
-    </div>
+    <select id="mode" title="Search mode">
+      <option value="postcode">Postcode / Address</option>
+      <option value="latlon">Lat, Lon</option>
+      <option value="en">Easting, Northing</option>
+    </select>
+
+    <input id="q" type="text"
+           placeholder="SY3 0NS  |  52.677027, -2.773167  |  349000, 306000" />
+
+    <button id="go">Search</button>
 
     <span class="spacer"></span>
 
-    <div class="group">
-      <button id="btn-export" title="Download drawings as GeoJSON">Export</button>
-      <button id="btn-import" title="Load drawings from GeoJSON">Import</button>
-      <input id="file-import" type="file" accept=".json,.geojson" class="hidden">
-    </div>
+    <button id="btn-export" title="Download drawings as GeoJSON">Export</button>
+    <button id="btn-import" title="Load drawings from GeoJSON">Import</button>
+    <input id="file-import" type="file" accept=".json,.geojson" style="display:none">
 
     <span class="spacer"></span>
 
-    <div class="group">
-      <button id="btn-edit-all"  title="Enable edit mode for all shapes">Edit All</button>
-      <button id="btn-drag"      title="Enable drag mode for shapes">Drag Mode</button>
-      <button id="btn-finish"    title="Disable edit/drag modes">Finish Edit</button>
-    </div>
+    <button id="btn-edit-all" title="Enable edit mode for all shapes">Edit All</button>
+    <button id="btn-drag"     title="Enable drag mode for shapes">Drag Mode</button>
+    <button id="btn-finish"   title="Disable edit/drag modes">Finish Edit</button>
   </div>
 
   <!-- Pin info panel -->
@@ -169,7 +168,7 @@
   // Initial pin
   let pin = L.marker(centre).addTo(map).bindPopup("29 Green Lane, SY3 0NS").openPopup();
 
-  // Nominatim geocoder control on map (extra)
+  // Optional map-embedded geocoder control
   L.Control.geocoder({ defaultMarkGeocode: false, placeholder: 'Search…' })
     .on('markgeocode', e => {
       const { center, name, bbox } = e.geocode;
