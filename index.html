@@ -33,15 +33,16 @@
 
   <style>
     html, body { height: 100%; margin: 0; }
-    #map { width: 100%; height: 100vh; }
+    /* Position relative so absolutely-positioned children stick in fullscreen */
+    #map { width: 100%; height: 100vh; position: relative; }
 
-    /* Unified search toolbar (moved right so it doesn't overlap Geoman tools) */
+    /* Unified search toolbar (now INSIDE #map, so it shows in fullscreen) */
     .toolbar {
-      position: absolute; z-index: 1000; top: 10px; left: 200px; /* <-- shift here */
+      position: absolute; z-index: 1000; top: 10px; left: 140px; /* scooted right */
       background: #fff; border-radius: 10px; padding: 8px 10px;
       box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 14px system-ui, sans-serif;
       display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
-      max-width: 95vw;
+      max-width: min(95vw, 760px);
     }
     .toolbar select, .toolbar input, .toolbar button {
       padding: 6px 8px; border: 1px solid #ddd; border-radius: 8px;
@@ -63,7 +64,7 @@
     .info code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
     .hidden { display: none; }
 
-    /* Polygon metrics panel (bottom-left) */
+    /* Polygon metrics panel */
     .metrics {
       position: absolute; z-index: 1000; left: 10px; bottom: 10px;
       background: #fff; border-radius: 10px; padding: 10px 12px;
@@ -75,58 +76,59 @@
     .metrics code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
 
     @media (max-width: 640px) {
-      .toolbar { left: 100px; } /* scoot a bit less on small screens */
+      .toolbar { left: 100px; }
     }
   </style>
 </head>
 <body>
-<div id="map"></div>
+<!-- Everything lives INSIDE the map container -->
+<div id="map">
+  <!-- Unified Search + Drawing toolbar -->
+  <div class="toolbar">
+    <div class="group">
+      <select id="mode">
+        <option value="postcode">Postcode / Address</option>
+        <option value="latlon">Lat, Lon</option>
+        <option value="en">Easting, Northing</option>
+      </select>
+      <input id="q" type="text" style="width:320px"
+            placeholder="SY3 0NS  |  52.677027, -2.773167  |  349000, 306000" />
+      <button id="go">Search</button>
+    </div>
 
-<!-- Unified Search + Drawing toolbar -->
-<div class="toolbar">
-  <div class="group">
-    <select id="mode">
-      <option value="postcode">Postcode / Address</option>
-      <option value="latlon">Lat, Lon</option>
-      <option value="en">Easting, Northing</option>
-    </select>
-    <input id="q" type="text" style="width:320px"
-           placeholder="SY3 0NS  |  52.677027, -2.773167  |  349000, 306000" />
-    <button id="go">Search</button>
+    <span class="spacer"></span>
+
+    <div class="group">
+      <button id="btn-export" title="Download drawings as GeoJSON">Export</button>
+      <button id="btn-import" title="Load drawings from GeoJSON">Import</button>
+      <input id="file-import" type="file" accept=".json,.geojson" class="hidden">
+    </div>
+
+    <span class="spacer"></span>
+
+    <div class="group">
+      <button id="btn-edit-all"  title="Enable edit mode for all shapes">Edit All</button>
+      <button id="btn-drag"      title="Enable drag mode for shapes">Drag Mode</button>
+      <button id="btn-finish"    title="Disable edit/drag modes">Finish Edit</button>
+    </div>
   </div>
 
-  <span class="spacer"></span>
-
-  <div class="group">
-    <button id="btn-export" title="Download drawings as GeoJSON">Export</button>
-    <button id="btn-import" title="Load drawings from GeoJSON">Import</button>
-    <input id="file-import" type="file" accept=".json,.geojson" class="hidden">
+  <!-- Pin info panel -->
+  <div class="info" id="info">
+    <h4>Pin info</h4>
+    <div class="row" id="addr">Address: <em>—</em></div>
+    <div class="row">Lat/Lon: <code id="latlon">—</code></div>
+    <div class="row">Easting/Northing: <code id="en">—</code></div>
+    <div class="row" style="opacity:.8">Tip: Click a polygon to edit its vertices. Shift+click adds a vertex, right-click removes (while in edit mode).</div>
   </div>
 
-  <span class="spacer"></span>
-
-  <div class="group">
-    <button id="btn-edit-all"  title="Enable edit mode for all shapes">Edit All</button>
-    <button id="btn-drag"      title="Enable drag mode for shapes">Drag Mode</button>
-    <button id="btn-finish"    title="Disable edit/drag modes">Finish Edit</button>
+  <!-- Polygon metrics panel -->
+  <div class="metrics" id="metrics">
+    <h4>Shape info</h4>
+    <div class="row">Type: <code id="m-type">—</code></div>
+    <div class="row">Area: <code id="m-area">—</code></div>
+    <div class="row">Perimeter: <code id="m-perim">—</code></div>
   </div>
-</div>
-
-<!-- Pin info panel -->
-<div class="info" id="info">
-  <h4>Pin info</h4>
-  <div class="row" id="addr">Address: <em>—</em></div>
-  <div class="row">Lat/Lon: <code id="latlon">—</code></div>
-  <div class="row">Easting/Northing: <code id="en">—</code></div>
-  <div class="row" style="opacity:.8">Tip: Click a polygon to edit its vertices. Shift+click adds a vertex, right-click removes (while in edit mode).</div>
-</div>
-
-<!-- Polygon metrics panel -->
-<div class="metrics" id="metrics">
-  <h4>Shape info</h4>
-  <div class="row">Type: <code id="m-type">—</code></div>
-  <div class="row">Area: <code id="m-area">—</code></div>
-  <div class="row">Perimeter: <code id="m-perim">—</code></div>
 </div>
 
 <!-- Google Maps JS (async, no callback) -->
@@ -135,13 +137,10 @@
 <script type="module">
   // ---------- Config ----------
   const centre = [52.677027, -2.773167]; // 29 Green Lane, SY3 0NS
-
-  // Proj4 setup for OSGB36
   proj4.defs('EPSG:27700', '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs');
   const WGS84 = 'EPSG:4326';
   const OSGB  = 'EPSG:27700';
 
-  // Helpers
   const byId = id => document.getElementById(id);
   const isNum = v => typeof v === 'number' && isFinite(v) && !isNaN(v);
 
@@ -159,7 +158,7 @@
     { maxZoom: 20, attribution: "© OpenStreetMap contributors" }
   );
 
-  // Map init with fallback (immediate feedback)
+  // Map init with fallback
   const map = L.map("map", {
     center: centre,
     zoom: 19,
@@ -170,7 +169,7 @@
   // Initial pin
   let pin = L.marker(centre).addTo(map).bindPopup("29 Green Lane, SY3 0NS").openPopup();
 
-  // Nominatim geocoder control on map
+  // Nominatim geocoder control on map (extra)
   L.Control.geocoder({ defaultMarkGeocode: false, placeholder: 'Search…' })
     .on('markgeocode', e => {
       const { center, name, bbox } = e.geocode;
@@ -179,7 +178,7 @@
     })
     .addTo(map);
 
-  // Info panel ref
+  // Pin info panel
   const elAddr = byId('addr');
   const elLatLon = byId('latlon');
   const elEN = byId('en');
@@ -188,11 +187,9 @@
     const latStr = lat.toFixed(6), lonStr = lon.toFixed(6);
     elLatLon.textContent = `${latStr}, ${lonStr}`;
 
-    // WGS84 -> OSGB36
-    const [E, N] = proj4(WGS84, OSGB, [lon, lat]); // proj4 expects [lon,lat]
+    const [E, N] = proj4(WGS84, OSGB, [lon, lat]);
     elEN.textContent = `${Math.round(E)}, ${Math.round(N)}`;
 
-    // Reverse geocode
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latStr}&lon=${lonStr}&addressdetails=1&zoom=18&accept-language=en-GB`;
       const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -213,7 +210,6 @@
     updateInfo(lat, lon, labelHint);
   }
 
-  // Click to move pin
   map.on('click', e => setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin'));
 
   // ---------- Google base (async ready) ----------
@@ -275,8 +271,7 @@
       if (parts.length !== 2) return alert('Use: 52.677027, -2.773167');
       const lat = parseFloat(parts[0]), lon = parseFloat(parts[1]);
       if (!isNum(lat) || !isNum(lon)) return alert('Invalid lat/lon.');
-      setPin(lat, lon, 'Lat/Lon');
-      return;
+      setPin(lat, lon, 'Lat/Lon'); return;
     }
 
     if (mode === 'en') {
@@ -284,12 +279,10 @@
       if (parts.length !== 2) return alert('Use: 349000, 306000 (E,N)');
       const E = parseFloat(parts[0]), N = parseFloat(parts[1]);
       if (!isNum(E) || !isNum(N)) return alert('Invalid Easting/Northing.');
-      const [lon, lat] = proj4(OSGB, WGS84, [E, N]); // -> [lon,lat]
-      setPin(lat, lon, `OSGB36: ${Math.round(E)}, ${Math.round(N)}`);
-      return;
+      const [lon, lat] = proj4(OSGB, WGS84, [E, N]);
+      setPin(lat, lon, `OSGB36: ${Math.round(E)}, ${Math.round(N)}`); return;
     }
 
-    // Postcode / address (Nominatim, UK bias)
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&addressdetails=1&accept-language=en-GB`;
       const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -301,12 +294,8 @@
           const bb = [[+boundingbox[0], +boundingbox[2]],[+boundingbox[1], +boundingbox[3]]];
           map.fitBounds(bb, { maxZoom: 19 });
         }
-      } else {
-        alert('No results.');
-      }
-    } catch {
-      alert('Search failed (network or rate limit).');
-    }
+      } else alert('No results.');
+    } catch { alert('Search failed (network or rate limit).'); }
   }
 
   // ---------- Export / Import ----------
@@ -336,12 +325,10 @@
       const layerGroup = L.geoJSON(gj, { style: defaultStyle }).addTo(map);
       try { map.fitBounds(layerGroup.getBounds(), { maxZoom: 19 }); } catch {}
       layerGroup.eachLayer(l => bindEditableHandlers(l, true));
-    } catch {
-      alert('Invalid GeoJSON.');
-    }
+    } catch { alert('Invalid GeoJSON.'); }
   };
 
-  // ---------- Geoman drawing & EDITING ----------
+  // ---------- Geoman drawing & EDITING + Metrics ----------
   const defaultStyle = { color: "#00AEEF", weight: 2, fillOpacity: 0.18 };
   const activeStyle  = { color: "#007ACC", weight: 2, fillOpacity: 0.20 };
 
@@ -366,40 +353,28 @@
     removalMode: true
   });
 
-  // Currently selected layer for metrics
   let selectedLayer = null;
-
-  // Metrics panel refs
   const mType  = byId('m-type');
   const mArea  = byId('m-area');
   const mPerim = byId('m-perim');
 
-  // Compute and display metrics for the selected layer
   function updateMetrics(layer) {
-    if (!layer) {
-      mType.textContent = '—'; mArea.textContent = '—'; mPerim.textContent = '—';
-      return;
-    }
-    // Circle special-case
+    if (!layer) { mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; return; }
     if (layer instanceof L.Circle) {
-      const r = layer.getRadius(); // metres
-      const area = Math.PI * r * r;             // m²
-      const peri = 2 * Math.PI * r;             // m
+      const r = layer.getRadius();
+      const area = Math.PI * r * r;
+      const peri = 2 * Math.PI * r;
       mType.textContent = 'Circle';
       mArea.textContent = `${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`;
       mPerim.textContent = `${peri.toFixed(2)} m`;
       return;
     }
-
-    // Polygons/rectangles/lines via turf
     try {
       const gj = layer.toGeoJSON();
       const type = gj.geometry?.type || 'Feature';
       mType.textContent = type;
-
       if (type === 'Polygon' || type === 'MultiPolygon') {
-        const area = turf.area(gj); // m²
-        // Perimeter: convert outer ring to line & measure length in km -> m
+        const area = turf.area(gj);
         const outline = turf.polygonToLine(gj);
         const lengthKm = turf.length(outline, { units: 'kilometers' });
         const peri = lengthKm * 1000;
@@ -407,36 +382,23 @@
         mPerim.textContent = `${peri.toFixed(2)} m`;
       } else if (type === 'LineString' || type === 'MultiLineString') {
         const lengthKm = turf.length(gj, { units: 'kilometers' });
-        const peri = lengthKm * 1000;
         mArea.textContent = `—`;
-        mPerim.textContent = `${peri.toFixed(2)} m`;
-      } else if (type === 'Point') {
-        mArea.textContent = `—`;
-        mPerim.textContent = `—`;
+        mPerim.textContent = `${(lengthKm*1000).toFixed(2)} m`;
       } else {
-        mArea.textContent = `—`;
-        mPerim.textContent = `—`;
+        mArea.textContent = `—`; mPerim.textContent = `—`;
       }
-    } catch (e) {
-      console.warn('Metric calc failed:', e);
-      mType.textContent = '—'; mArea.textContent = '—'; mPerim.textContent = '—';
-    }
+    } catch { mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; }
   }
 
   function setSelected(layer) {
-    // Remove active style from previous
     if (selectedLayer && selectedLayer.setStyle) selectedLayer.setStyle(defaultStyle);
     selectedLayer = layer;
     if (selectedLayer && selectedLayer.setStyle) selectedLayer.setStyle(activeStyle);
     updateMetrics(selectedLayer);
   }
 
-  // Bind click-to-edit & metrics for a layer
   function bindEditableHandlers(layer, isImported = false) {
-    // Style
     if (layer.setStyle && !isImported) layer.setStyle(defaultStyle);
-
-    // Click toggles edit & selects for metrics
     layer.on('click', () => {
       setSelected(layer);
       if (layer.pm) {
@@ -444,18 +406,13 @@
         else layer.pm.enable({ allowSelfIntersection: false, snappable: true, snapDistance: 20 });
       }
     });
-
-    // Update metrics as user edits/drags
-    layer.on('pm:edit', () => updateMetrics(layer));
-    layer.on('pm:dragend', () => updateMetrics(layer));
+    layer.on('pm:edit',   () => updateMetrics(layer));
+    layer.on('pm:dragend',() => updateMetrics(layer));
     layer.on('pm:enable', () => { if (layer.setStyle) layer.setStyle(activeStyle); });
-    layer.on('pm:disable', () => { if (layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); });
-
-    // Initial metrics populate if this is the first/only layer
+    layer.on('pm:disable',() => { if (layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); });
     updateMetrics(layer);
   }
 
-  // New shapes → style, enable edit, select, and bind metrics
   map.on("pm:create", e => {
     const layer = e.layer;
     if (layer.setStyle) layer.setStyle(defaultStyle);
@@ -467,25 +424,18 @@
     console.log("Created feature:", layer.toGeoJSON());
   });
 
-  // Make existing layers (if any) clickable/editable
   map.eachLayer(l => { if (l.pm) bindEditableHandlers(l); });
 
-  // Toolbar buttons for global edit/drag toggles
-  byId('btn-edit-all').onclick = () => {
-    map.pm.toggleGlobalEditMode();
-    // Select none when toggling global, metrics will update on click/edit
-  };
-  byId('btn-drag').onclick = () => {
-    map.pm.toggleGlobalDragMode();
-  };
-  byId('btn-finish').onclick = () => {
+  byId('btn-edit-all').onclick = () => { map.pm.toggleGlobalEditMode(); };
+  byId('btn-drag').onclick     = () => { map.pm.toggleGlobalDragMode(); };
+  byId('btn-finish').onclick   = () => {
     if (map.pm.globalEditEnabled()) map.pm.toggleGlobalEditMode();
     if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) map.pm.toggleGlobalDragMode();
     map.eachLayer(l => { if (l.pm && l.pm.enabled && l.pm.enabled()) l.pm.disable(); });
     if (selectedLayer) updateMetrics(selectedLayer);
   };
 
-  // ---------- Initial pin info ----------
+  // Initial pin info
   (async () => { await updateInfo(centre[0], centre[1], '29 Green Lane, SY3 0NS'); })();
 </script>
 
