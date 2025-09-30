@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Google + Draw + UK Searches</title>
+  <title>Leaflet + Google + Unified UK Search + Draw</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -25,23 +25,28 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
   <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
 
-  <!-- Proj4 for OSGB ↔ WGS84 transforms -->
+  <!-- Proj4 for OSGB36 <-> WGS84 transforms -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.1/proj4.min.js"></script>
 
   <style>
     html, body { height: 100%; margin: 0; }
     #map { width: 100%; height: 100vh; }
+
+    /* Unified search toolbar */
     .toolbar {
       position: absolute; z-index: 1000; top: 10px; left: 10px;
       background: #fff; border-radius: 10px; padding: 8px 10px;
       box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 14px system-ui, sans-serif;
-      display: grid; gap: 6px; grid-template-columns: 1fr auto;
-      min-width: 320px;
+      display: flex; gap: 6px; align-items: center;
     }
-    .toolbar-row { display: grid; gap: 6px; grid-template-columns: 1fr auto; grid-column: 1 / -1; }
-    .toolbar input { padding: 6px 8px; border: 1px solid #ddd; border-radius: 8px; }
-    .toolbar button { padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer; }
+    .toolbar select, .toolbar input, .toolbar button {
+      padding: 6px 8px; border: 1px solid #ddd; border-radius: 8px;
+    }
+    .toolbar button { background: #f7f7f7; cursor: pointer; }
     .toolbar button:hover { background: #eee; }
+    .toolbar .spacer { width: 6px; }
+
+    /* Info panel */
     .info {
       position: absolute; z-index: 1000; right: 10px; bottom: 10px;
       background: #fff; border-radius: 10px; padding: 10px 12px;
@@ -57,29 +62,20 @@
 <body>
 <div id="map"></div>
 
-<!-- Top toolbar -->
+<!-- Unified Search Toolbar -->
 <div class="toolbar">
-  <!-- Address/postcode search (also have the geocoder control on map) -->
-  <div class="toolbar-row">
-    <input id="search-q" type="text" placeholder="Search address or postcode (UK)…" />
-    <button id="btn-search">Search</button>
-  </div>
-  <!-- Lat/Lon -->
-  <div class="toolbar-row">
-    <input id="search-latlon" type="text" placeholder="Lat, Lon (e.g., 52.677027, -2.773167)" />
-    <button id="btn-latlon">Go</button>
-  </div>
-  <!-- Easting/Northing (OSGB36 / EPSG:27700) -->
-  <div class="toolbar-row">
-    <input id="search-en" type="text" placeholder="Easting, Northing (EPSG:27700)" />
-    <button id="btn-en">Go</button>
-  </div>
-  <!-- Export / Import -->
-  <div class="toolbar-row">
-    <button id="btn-export">Export GeoJSON</button>
-    <button id="btn-import">Import</button>
-    <input id="file-import" type="file" accept=".json,.geojson" class="hidden">
-  </div>
+  <select id="mode">
+    <option value="postcode">Postcode / Address</option>
+    <option value="latlon">Lat, Lon</option>
+    <option value="en">Easting, Northing</option>
+  </select>
+  <input id="q" type="text" style="width:320px"
+         placeholder="SY3 0NS  |  52.677027, -2.773167  |  349000, 306000" />
+  <button id="go">Search</button>
+  <span class="spacer"></span>
+  <button id="btn-export" title="Download drawings as GeoJSON">Export</button>
+  <button id="btn-import" title="Load drawings from GeoJSON">Import</button>
+  <input id="file-import" type="file" accept=".json,.geojson" class="hidden">
 </div>
 
 <!-- Pin info panel -->
@@ -96,12 +92,15 @@
 <script type="module">
   // ---------- Config ----------
   const centre = [52.677027, -2.773167]; // 29 Green Lane, SY3 0NS
-  const isNumber = v => typeof v === 'number' && !isNaN(v) && isFinite(v);
 
-  // Define OSGB36 (EPSG:27700)
+  // Proj4 setup for OSGB36
   proj4.defs('EPSG:27700', '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs');
   const WGS84 = 'EPSG:4326';
   const OSGB  = 'EPSG:27700';
+
+  // Helpers
+  const byId = id => document.getElementById(id);
+  const isNum = v => typeof v === 'number' && isFinite(v) && !isNaN(v);
 
   // ---------- Basemaps ----------
   const esriImagery = L.tileLayer(
@@ -117,7 +116,7 @@
     { maxZoom: 20, attribution: "© OpenStreetMap contributors" }
   );
 
-  // Build Leaflet map with fallback first (so users see something immediately)
+  // Map init with fallback (immediate feedback)
   const map = L.map("map", {
     center: centre,
     zoom: 19,
@@ -125,34 +124,32 @@
     fullscreenControl: true
   });
 
-  // Leaflet Geocoder control (Nominatim)
-  L.Control.geocoder({
-    defaultMarkGeocode: false,
-    placeholder: 'Search…'
-  }).on('markgeocode', e => {
-    const { center, name, bbox } = e.geocode;
-    setPin(center.lat, center.lng, name);
-    if (bbox) map.fitBounds(bbox);
-  }).addTo(map);
-
-  // Marker for the pin
+  // Initial pin
   let pin = L.marker(centre).addTo(map).bindPopup("29 Green Lane, SY3 0NS").openPopup();
 
-  // Info panel elements
-  const elAddr = document.getElementById('addr');
-  const elLatLon = document.getElementById('latlon');
-  const elEN = document.getElementById('en');
+  // Nominatim geocoder control on map (optional extra)
+  L.Control.geocoder({ defaultMarkGeocode: false, placeholder: 'Search…' })
+    .on('markgeocode', e => {
+      const { center, name, bbox } = e.geocode;
+      setPin(center.lat, center.lng, name);
+      if (bbox) map.fitBounds(bbox);
+    })
+    .addTo(map);
 
-  // Update info panel (reverse geocode + coord display)
+  // Info panel
+  const elAddr = byId('addr');
+  const elLatLon = byId('latlon');
+  const elEN = byId('en');
+
   async function updateInfo(lat, lon, labelHint = '') {
     const latStr = lat.toFixed(6), lonStr = lon.toFixed(6);
     elLatLon.textContent = `${latStr}, ${lonStr}`;
 
-    // Lat/Lon -> Easting/Northing
-    const [E, N] = proj4(WGS84, OSGB, [lon, lat]);
+    // WGS84 -> OSGB36
+    const [E, N] = proj4(WGS84, OSGB, [lon, lat]); // proj4 expects [lon,lat]
     elEN.textContent = `${Math.round(E)}, ${Math.round(N)}`;
 
-    // Reverse geocode (Nominatim)
+    // Reverse geocode
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latStr}&lon=${lonStr}&addressdetails=1&zoom=18&accept-language=en-GB`;
       const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -165,19 +162,16 @@
     }
   }
 
-  // Create / move the pin and update info
   function setPin(lat, lon, labelHint = '') {
-    if (!isNumber(lat) || !isNumber(lon)) return;
+    if (!isNum(lat) || !isNum(lon)) return;
     pin.setLatLng([lat, lon]);
     pin.addTo(map).openPopup();
     map.setView([lat, lon], Math.max(map.getZoom(), 18));
     updateInfo(lat, lon, labelHint);
   }
 
-  // Map click → move pin + info
-  map.on('click', (e) => {
-    setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin');
-  });
+  // Click to move pin
+  map.on('click', e => setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin'));
 
   // ---------- Google base (async ready) ----------
   async function ensureGoogle() {
@@ -195,8 +189,7 @@
     const gHybrid = L.gridLayer.googleMutant({ type: "hybrid",    maxZoom: 21 });
     const gSat    = L.gridLayer.googleMutant({ type: "satellite", maxZoom: 21 });
 
-    // Show Google Hybrid on top
-    map.addLayer(gHybrid);
+    map.addLayer(gHybrid); // default to Hybrid
 
     const baseMaps = {
       "Google Roadmap": gRoad,
@@ -217,13 +210,45 @@
     ).addTo(map);
   }
 
-  // ---------- Toolbar actions ----------
-  // Postcode/address search (manual input)
-  document.getElementById('btn-search').onclick = async () => {
-    const q = document.getElementById('search-q').value.trim();
-    if (!q) return;
-    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&countrycodes=gb&limit=1&addressdetails=1&accept-language=en-GB`;
+  // ---------- Unified Search ----------
+  byId('mode').addEventListener('change', () => {
+    const m = byId('mode').value;
+    byId('q').placeholder =
+      m === 'postcode' ? 'SY3 0NS  |  10 Downing Street' :
+      m === 'latlon'   ? '52.677027, -2.773167' :
+                         '349000, 306000';
+  });
+
+  byId('go').addEventListener('click', runUnifiedSearch);
+  byId('q').addEventListener('keydown', e => { if (e.key === 'Enter') runUnifiedSearch(); });
+
+  async function runUnifiedSearch() {
+    const mode = byId('mode').value;
+    const raw  = byId('q').value.trim();
+    if (!raw) return;
+
+    if (mode === 'latlon') {
+      const parts = raw.split(/[,\s]+/).filter(Boolean);
+      if (parts.length !== 2) return alert('Use: 52.677027, -2.773167');
+      const lat = parseFloat(parts[0]), lon = parseFloat(parts[1]);
+      if (!isNum(lat) || !isNum(lon)) return alert('Invalid lat/lon.');
+      setPin(lat, lon, 'Lat/Lon');
+      return;
+    }
+
+    if (mode === 'en') {
+      const parts = raw.split(/[,\s]+/).filter(Boolean);
+      if (parts.length !== 2) return alert('Use: 349000, 306000 (E,N)');
+      const E = parseFloat(parts[0]), N = parseFloat(parts[1]);
+      if (!isNum(E) || !isNum(N)) return alert('Invalid Easting/Northing.');
+      const [lon, lat] = proj4(OSGB, WGS84, [E, N]); // -> [lon,lat]
+      setPin(lat, lon, `OSGB36: ${Math.round(E)}, ${Math.round(N)}`);
+      return;
+    }
+
+    // Postcode / address (Nominatim, UK bias)
     try {
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&addressdetails=1&accept-language=en-GB`;
       const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const j = await r.json();
       if (j && j.length) {
@@ -237,35 +262,12 @@
         alert('No results.');
       }
     } catch {
-      alert('Search failed (network?).');
+      alert('Search failed (network or rate limit).');
     }
-  };
+  }
 
-  // Lat/Lon search
-  document.getElementById('btn-latlon').onclick = () => {
-    const raw = document.getElementById('search-latlon').value.trim();
-    if (!raw) return;
-    const parts = raw.split(/[,\s]+/).filter(Boolean);
-    if (parts.length !== 2) return alert('Use "lat, lon" (e.g., 52.677027, -2.773167).');
-    const lat = parseFloat(parts[0]), lon = parseFloat(parts[1]);
-    if (!isNumber(lat) || !isNumber(lon)) return alert('Invalid numbers.');
-    setPin(lat, lon, 'Lat/Lon');
-  };
-
-  // Easting/Northing (EPSG:27700) search
-  document.getElementById('btn-en').onclick = () => {
-    const raw = document.getElementById('search-en').value.trim();
-    if (!raw) return;
-    const parts = raw.split(/[,\s]+/).filter(Boolean);
-    if (parts.length !== 2) return alert('Use "Easting, Northing" (EPSG:27700).');
-    const E = parseFloat(parts[0]), N = parseFloat(parts[1]);
-    if (!isNumber(E) || !isNumber(N)) return alert('Invalid numbers.');
-    const [lon, lat] = proj4(OSGB, WGS84, [E, N]); // returns [lon, lat]
-    setPin(lat, lon, `OSGB36: ${Math.round(E)}, ${Math.round(N)}`);
-  };
-
-  // Export drawings
-  document.getElementById('btn-export').onclick = () => {
+  // ---------- Export / Import ----------
+  byId('btn-export').onclick = () => {
     const feats = [];
     map.eachLayer(l => {
       if (l.pm && l.toGeoJSON) {
@@ -276,13 +278,14 @@
     });
     const fc = { type: 'FeatureCollection', features: feats };
     const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/json' });
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'drawings.geojson' });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: 'drawings.geojson'
+    });
     a.click(); URL.revokeObjectURL(a.href);
   };
 
-  // Import drawings
-  document.getElementById('btn-import').onclick = () => document.getElementById('file-import').click();
-  document.getElementById('file-import').onchange = async (ev) => {
+  byId('btn-import').onclick = () => byId('file-import').click();
+  byId('file-import').onchange = async ev => {
     const file = ev.target.files[0]; if (!file) return;
     try {
       const text = await file.text();
@@ -294,7 +297,7 @@
     }
   };
 
-  // Drawing UX
+  // ---------- Drawing controls ----------
   map.pm.addControls({
     position: "topleft",
     drawMarker: true,
