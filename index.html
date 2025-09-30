@@ -1,13 +1,41 @@
-<!-- Remove the old callback-based script tag -->
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>Leaflet + Google (Loader) + Drawing — SY3 0NS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-<!-- Use the official JS API Loader (module) -->
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Fullscreen -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.fullscreen@2.4.0/Control.FullScreen.css">
+  <script src="https://unpkg.com/leaflet.fullscreen@2.4.0/Control.FullScreen.js"></script>
+
+  <!-- Leaflet.Geoman (drawing/editing) -->
+  <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.15.0/dist/leaflet-geoman.css">
+  <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.15.0/dist/leaflet-geoman.min.js"></script>
+
+  <!-- GoogleMutant (needs Google Maps JS API present) -->
+  <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@0.15.0/dist/Leaflet.GoogleMutant.js"></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { width: 100%; height: 100vh; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+
+<!-- IMPORTANT: Do NOT include any other Google Maps <script ...callback=...> tag -->
 <script type="module">
   import { Loader } from "https://unpkg.com/@googlemaps/js-api-loader@1.16.8/dist/index.min.js";
 
   const API_KEY = "AIzaSyAdHcFCZWzjEOj98oEn5AfufQMR0p9VgLA"; // your key
   const centre = [52.677027, -2.773167]; // 29 Green Lane
 
-  // Fallback layers (no key)
+  // Fallback base layers (keyless)
   const esriImagery = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     { maxZoom: 20, attribution: "Imagery © Esri" }
@@ -21,44 +49,56 @@
     { maxZoom: 20, attribution: "© OpenStreetMap contributors" }
   );
 
-  // Load Google Maps JS API the recommended way
-  const loader = new Loader({
-    apiKey: API_KEY,
-    version: "weekly",
-    // Add your preferred options here, e.g. language/region
-  });
-
-  // Wait for Google to be ready, then build the map/layers
-  await loader.importLibrary("maps");
-
-  // Now 'google' is available globally for GoogleMutant
-  const gRoad   = L.gridLayer.googleMutant({ type: "roadmap",   maxZoom: 21 });
-  const gHybrid = L.gridLayer.googleMutant({ type: "hybrid",    maxZoom: 21 });
-  const gSat    = L.gridLayer.googleMutant({ type: "satellite", maxZoom: 21 });
-
+  // Build Leaflet map early so we can show fallback immediately if Google fails
   const map = L.map("map", {
     center: centre,
     zoom: 19,
-    layers: [gHybrid], // start with Google Hybrid
+    layers: [esriImagery, esriLabels], // temporary hybrid until Google loads
     fullscreenControl: true
   });
-
   L.marker(centre).addTo(map).bindPopup("29 Green Lane, SY3 0NS").openPopup();
 
-  const baseMaps = {
-    "Google Roadmap": gRoad,
-    "Google Hybrid": gHybrid,
-    "Google Satellite": gSat,
-    "Esri Satellite (fallback)": esriImagery,
-    "OSM Streets (fallback)": osmStreets
-  };
-  const overlays = {
-    "Esri Labels (for Esri Hybrid)": esriLabels
-  };
+  // Load Google Maps JS API via the Loader (no callback warning)
+  try {
+    const loader = new Loader({ apiKey: API_KEY, version: "weekly" });
+    await loader.importLibrary("maps"); // ensures window.google is ready
 
-  L.control.layers(baseMaps, overlays, { collapsed: false }).addTo(map);
+    // Now GoogleMutant can create layers
+    const gRoad   = L.gridLayer.googleMutant({ type: "roadmap",   maxZoom: 21 });
+    const gHybrid = L.gridLayer.googleMutant({ type: "hybrid",    maxZoom: 21 });
+    const gSat    = L.gridLayer.googleMutant({ type: "satellite", maxZoom: 21 });
 
-  // Geoman drawing controls (keep whatever you had before)
+    // Switch to Google Hybrid as the visible base
+    map.eachLayer(l => { /* keep marker */ });
+    map.addLayer(gHybrid);
+
+    // Layer control (Google + fallbacks)
+    const baseMaps = {
+      "Google Roadmap": gRoad,
+      "Google Hybrid":  gHybrid,
+      "Google Satellite": gSat,
+      "Esri Satellite (fallback)": esriImagery,
+      "OSM Streets (fallback)": osmStreets
+    };
+    const overlays = { "Esri Labels (for Esri Hybrid)": esriLabels };
+    L.control.layers(baseMaps, overlays, { collapsed: false }).addTo(map);
+
+  } catch (err) {
+    console.error("Google Maps JS API failed to load:", err);
+    // You’ll stay on Esri/OSM fallback automatically
+    L.control.layers(
+      { "Esri Satellite": esriImagery, "OSM Streets": osmStreets },
+      { "Esri Labels (Hybrid)": esriLabels },
+      { collapsed: false }
+    ).addTo(map);
+
+    // Helpful hint for common cause:
+    // If console shows RefererNotAllowed, add these to key restrictions:
+    // https://mikeminton.github.io/*
+    // https://mikeminton.github.io/leaflet-google-draw/*
+  }
+
+  // Geoman drawing controls
   map.pm.addControls({
     position: "topleft",
     drawMarker: true,
@@ -80,3 +120,7 @@
 
   map.on("enterFullscreen", () => map.setView(centre, 19));
 </script>
+
+<noscript>Enable JavaScript to view the map.</noscript>
+</body>
+</html>
