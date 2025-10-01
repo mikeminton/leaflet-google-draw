@@ -21,10 +21,6 @@
   <!-- GoogleMutant (Leaflet grid layer for Google) -->
   <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@0.15.0/dist/Leaflet.GoogleMutant.js"></script>
 
-  <!-- Leaflet Control Geocoder (Nominatim) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
-  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
-
   <!-- Proj4 for OSGB36 <-> WGS84 transforms -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.1/proj4.min.js"></script>
 
@@ -87,6 +83,9 @@
     .leaflet-top.leaflet-right .leaflet-control-layers {
       margin-top: 100px; /* 10px default + 25px extra */
     }
+    
+    /* remove the search button from all map layers */
+    .leaflet-control-geocoder { display: none !important; }
   </style>
 </head>
 <body>
