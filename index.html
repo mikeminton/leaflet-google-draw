@@ -208,13 +208,16 @@
     }
   }
 
-  function setPin(lat, lon, labelHint = '') {
+  function setPin(lat, lon, labelHint = '', recenter = false) {
     if (!isNum(lat) || !isNum(lon)) return;
     pin.setLatLng([lat, lon]);
     pin.addTo(map).openPopup();
-    map.setView([lat, lon], Math.max(map.getZoom(), 18));
+    if (recenter) {
+      map.setView([lat, lon], Math.max(map.getZoom(), 18));
+    }
     updateInfo(lat, lon, labelHint);
   }
+
 
   // Guard: ignore clicks that originate from UI/controls
   function clickCameFromUI(evt) {
@@ -281,7 +284,7 @@
       if (parts.length !== 2) return alert('Use: 52.677027, -2.773167');
       const lat = parseFloat(parts[0]), lon = parseFloat(parts[1]);
       if (!isNum(lat) || !isNum(lon)) return alert('Invalid lat/lon.');
-      setPin(lat, lon, 'Lat/Lon'); return;
+      setPin(lat, lon, 'Lat/Lon', true); return;
     }
 
     if (mode === 'en') {
@@ -290,7 +293,7 @@
       const E = parseFloat(parts[0]), N = parseFloat(parts[1]);
       if (!isNum(E) || !isNum(N)) return alert('Invalid Easting/Northing.');
       const [lon, lat] = proj4(OSGB, WGS84, [E, N]);
-      setPin(lat, lon, `OSGB36: ${Math.round(E)}, ${Math.round(N)}`); return;
+      setPin(lat, lon, `OSGB36: ${Math.round(E)}, ${Math.round(N)}`, /*recenter*/ true);return;
     }
 
     try {
@@ -299,7 +302,7 @@
       const j = await r.json();
       if (j && j.length) {
         const { lat, lon, display_name, boundingbox } = j[0];
-        setPin(parseFloat(lat), parseFloat(lon), display_name);
+        setPin(parseFloat(lat), parseFloat(lon), display_name, true);
         if (boundingbox) {
           const bb = [[+boundingbox[0], +boundingbox[2]],[+boundingbox[1], +boundingbox[3]]];
           map.fitBounds(bb, { maxZoom: 19 });
@@ -346,7 +349,10 @@
     if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
     if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
     if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
-    setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin');
+  
+    // Only allow pin drop on Shift+Click, and do NOT recenter the map
+    if (!e.originalEvent || !e.originalEvent.shiftKey) return;
+    setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin', /*recenter*/ false);
   });
 
   // Track the "current" shape for metrics/copy/centering
