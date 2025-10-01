@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Google + Unified UK Search + Draw + Edit + Metrics</title>
+  <title>Leaflet + Google + Unified UK Search + Draw + Edit + Metrics + Street View</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -41,7 +41,7 @@
       overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
     }
     .toolbar select, .toolbar input, .toolbar button {
-      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; flex: 0 0 auto;
+      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; flex: 0 0 auto; cursor: pointer;
     }
     #q { min-width: 320px; flex: 1 1 420px; }
     .toolbar .spacer { width: 6px; flex: 0 0 auto; }
@@ -79,6 +79,26 @@
 
     /* Defensive */
     .leaflet-control-geocoder { display: none !important; }
+
+    /* Street View panel */
+    #sv-panel {
+      position: absolute; z-index: 1100; right: 10px; bottom: 10px;
+      width: 420px; height: 300px; background: #fff; border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.18); display: none; overflow: hidden;
+      border: 1px solid #ddd;
+    }
+    #sv-header {
+      height: 36px; display:flex; align-items:center; justify-content:space-between;
+      padding: 0 10px; border-bottom: 1px solid #eee; background:#fafafa;
+      font: 13px system-ui, sans-serif;
+    }
+    #sv-title { font-weight: 600; }
+    #sv-actions button {
+      margin-left: 6px; padding: 4px 8px; border: 1px solid #ddd; background:#fff; border-radius: 6px; cursor: pointer;
+    }
+    #pano { width: 100%; height: calc(100% - 36px); }
+    /* Allow resize */
+    #sv-panel { resize: both; }
   </style>
 </head>
 <body>
@@ -105,6 +125,12 @@
     <button id="btn-edit-all" title="Enable edit mode for all shapes">Edit All</button>
     <button id="btn-drag"     title="Enable drag mode for shapes">Drag Mode</button>
     <button id="btn-finish"   title="Disable edit/drag modes">Finish Edit</button>
+
+    <span class="spacer"></span>
+
+    <!-- NEW: Street View openers -->
+    <button id="btn-sv-center" title="Open Street View at map centre">Street View here</button>
+    <button id="btn-sv-pin" title="Open Street View at last pin">Street View at Pin</button>
   </div>
 
   <!-- Pin info panel -->
@@ -113,7 +139,7 @@
     <div class="row">Postcode: <code id="postcode">—</code></div>
     <div class="row">Lat/Lon: <code id="latlon">—</code></div>
     <div class="row">Easting/Northing: <code id="en">—</code></div>
-    <div class="row" style="opacity:.8">Tip: Shift+Click to drop a pin. Drawing clicks won’t move the map.</div>
+    <div class="row" style="opacity:.8">Tips: Shift+Click to drop a pin. Alt+Click to open Street View. Drawing clicks won’t move the map.</div>
   </div>
 
   <!-- Polygon metrics panel -->
@@ -128,10 +154,22 @@
       <button id="btn-center-shape" class="btn">Center on Shape</button>
     </div>
   </div>
+
+  <!-- NEW: Street View panel -->
+  <div id="sv-panel">
+    <div id="sv-header">
+      <div id="sv-title">Street View</div>
+      <div id="sv-actions">
+        <button id="sv-popout" title="Open in Google Maps">Open in Maps</button>
+        <button id="sv-close" title="Close Street View">Close</button>
+      </div>
+    </div>
+    <div id="pano"></div>
+  </div>
 </div>
 
 <!-- Google Maps JS (async, no callback) -->
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAdHcFCZWzjEOj98oEn5AfufQMR0p9VgLA&v=weekly&loading=async"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_API_KEY&v=weekly&loading=async"></script>
 
 <script type="module">
   // ---------- Config ----------
@@ -165,14 +203,14 @@
     fullscreenControl: true
   });
 
-  // Prevent clicks on UI/controls from triggering map click handlers
+  // Prevent UI clicks from bubbling into the map
   function blockEventsFor(selector) {
     document.querySelectorAll(selector).forEach(el => {
       L.DomEvent.disableClickPropagation(el);
       L.DomEvent.disableScrollPropagation(el);
     });
   }
-  blockEventsFor('#ui-toolbar, #metrics, #info');
+  blockEventsFor('#ui-toolbar, #metrics, #info, #sv-panel');
   blockEventsFor('.leaflet-control-container');
 
   // Initial pin
@@ -222,7 +260,7 @@
   // Guard: ignore clicks that originate from UI/controls
   function clickCameFromUI(evt) {
     const t = evt.originalEvent?.target;
-    return !!(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control'));
+    return !!(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel'));
   }
 
   // ---------- Google base (async ready) ----------
@@ -296,9 +334,7 @@
       setPin(lat, lon, true); return;
     }
 
-    // Postcode / Address mode:
-    // If it's a valid UK postcode, use postcodes.io (authoritative).
-    // Otherwise, forward-geocode with Nominatim (coords only; we won't show its address text).
+    // Postcode / Address mode
     try {
       const norm = normalizeUKPostcode(raw);
       if (norm) {
@@ -312,7 +348,6 @@
           alert('Postcode not found in postcodes.io; falling back to address search.');
         }
       }
-
       // Fallback: Nominatim for coordinates only
       const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
       const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -330,24 +365,22 @@
 
   // --- Keep map still while drawing (polygon-only dblclick handling) ---
   let isDrawing = false;
-  
+
   map.on('pm:drawstart', (e) => {
     isDrawing = true;
     if (e.shape === 'Polygon') {
-      map.doubleClickZoom.disable();  // prevent zoom so dblclick can finish polygon
+      map.doubleClickZoom.disable();  // double-click closes polygon
     }
   });
-  
   map.on('pm:drawend', () => {
     isDrawing = false;
-    map.doubleClickZoom.enable();     // restore normal dblclick zoom
+    map.doubleClickZoom.enable();
   });
-  
   map.on('pm:create', () => {
     isDrawing = false;
-    map.doubleClickZoom.enable();     // make sure it’s re-enabled after creation
+    map.doubleClickZoom.enable();
   });
-  
+
   // Pin-placement (Shift+Click only)
   map.on('click', e => {
     if (clickCameFromUI(e)) return;
@@ -368,7 +401,7 @@
     snapDistance: 20,
     allowSelfIntersection: false,
     continueDrawing: false,
-    finishOn: 'dblclick'   // <-- double-click closes the polygon
+    finishOn: 'dblclick'   // double-click closes the polygon
   });
 
   map.pm.addControls({
@@ -411,7 +444,7 @@
       mType.textContent = 'Circle';
       mArea.textContent = `${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`;
       mPerim.textContent = `${peri.toFixed(2)} m`;
-      if (mLongest) mLongest.textContent = '—'; // ensure no stale value
+      if (mLongest) mLongest.textContent = '—';
       return;
     }
     try {
@@ -485,7 +518,7 @@
       layer.pm.enable({ allowSelfIntersection: false, snappable: true, snapDistance: 20 });
     }
     bindEditableHandlers(layer);
-    if (isPolygonish(layer)) setSelected(layer); // make it current
+    if (isPolygonish(layer)) setSelected(layer);
     console.log("Created feature:", layer.toGeoJSON());
   });
 
@@ -530,7 +563,6 @@
     }
   });
 
-  // Build coordinates payload from shape (GeoJSON geometry.coordinates)
   function buildCoordsText(layer) {
     if (layer instanceof L.Circle) {
       const c = layer.getLatLng();
@@ -547,7 +579,6 @@
     return JSON.stringify(geom.coordinates);
   }
 
-  // Clipboard helpers
   async function copyText(text) {
     if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
     const ta = document.createElement('textarea');
@@ -561,7 +592,6 @@
     setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200);
   }
 
-  // Longest edge length (metres) from Polygon/MultiPolygon geometry
   function longestEdgeMetersFromGeom(geom) {
     let longest = 0;
     const processRing = (ring) => {
@@ -582,6 +612,84 @@
     }
     return longest;
   }
+
+  // ---------- Street View integration ----------
+  let svService = null;
+  let panorama = null;
+  const svPanel = byId('sv-panel');
+  const svTitle = byId('sv-title');
+  const svBtnClose = byId('sv-close');
+  const svBtnPop = byId('sv-popout');
+  const btnSVHere = byId('btn-sv-center');
+  const btnSVPin  = byId('btn-sv-pin');
+
+  function showSVPanel(show) {
+    svPanel.style.display = show ? 'block' : 'none';
+  }
+
+  function ensureSV() {
+    if (!window.google || !google.maps) return false;
+    if (!svService) svService = new google.maps.StreetViewService();
+    if (!panorama) {
+      panorama = new google.maps.StreetViewPanorama(byId('pano'), {
+        addressControl: true,
+        linksControl: true,
+        panControl: true,
+        zoomControl: true,
+        fullscreenControl: true
+      });
+    }
+    return true;
+  }
+
+  function openSVAt(lat, lon) {
+    if (!ensureSV()) return alert('Google Maps API not ready');
+    const loc = { lat, lng: lon };
+    svService.getPanorama({ location: loc, radius: 70 }, (data, status) => {
+      if (status === 'OK' && data && data.location) {
+        panorama.setPano(data.location.pano);
+        panorama.setPov({ heading: 0, pitch: 0 });
+        panorama.setVisible(true);
+        svTitle.textContent = 'Street View';
+        // Update popout link
+        svBtnPop.onclick = () => {
+          const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`;
+          window.open(url, '_blank', 'noopener');
+        };
+        showSVPanel(true);
+      } else {
+        alert('No Street View available at this location.');
+      }
+    });
+  }
+
+  // Open SV at map centre
+  btnSVHere.addEventListener('click', () => {
+    const c = map.getCenter();
+    openSVAt(c.lat, c.lng);
+  });
+
+  // Open SV at last pin
+  btnSVPin.addEventListener('click', () => {
+    const ll = pin.getLatLng();
+    openSVAt(ll.lat, ll.lng);
+  });
+
+  // Alt+Click anywhere on map to open SV there
+  map.on('click', (e) => {
+    if (clickCameFromUI(e)) return;
+    if (e.originalEvent && e.originalEvent.altKey) {
+      openSVAt(e.latlng.lat, e.latlng.lng);
+    }
+  });
+
+  // Right-click context menu -> open SV here
+  map.on('contextmenu', (e) => {
+    openSVAt(e.latlng.lat, e.latlng.lng);
+  });
+
+  // Close SV panel
+  svBtnClose.addEventListener('click', () => showSVPanel(false));
 
   // Initial pin info
   (async () => { await updateInfo(centre[0], centre[1]); })();
