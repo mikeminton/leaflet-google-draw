@@ -82,7 +82,7 @@
     /* Lower the base layers control */
     .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 75px !important; }
 
-    /* (Kept, but that geocoder control is gone from your code) */
+    /* Defensive: in case any geocoder control sneaks in */
     .leaflet-control-geocoder { display: none !important; }
   </style>
 </head>
@@ -173,14 +173,12 @@
 
   // Prevent clicks on UI/controls from triggering map click handlers
   function blockEventsFor(selector) {
-    const el = document.querySelector(selector);
-    if (!el) return;
-    L.DomEvent.disableClickPropagation(el);
-    L.DomEvent.disableScrollPropagation(el);
+    document.querySelectorAll(selector).forEach(el => {
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+    });
   }
-  blockEventsFor('#ui-toolbar');
-  blockEventsFor('#metrics');
-  blockEventsFor('#info');
+  blockEventsFor('#ui-toolbar, #metrics, #info');
   blockEventsFor('.leaflet-control-container');
 
   // Initial pin
@@ -223,11 +221,6 @@
     const t = evt.originalEvent?.target;
     return !!(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control'));
   }
-
-  map.on('click', e => {
-    if (clickCameFromUI(e)) return; // <-- don't move pin for UI clicks
-    setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin');
-  });
 
   // ---------- Google base (async ready) ----------
   async function ensureGoogle() {
@@ -340,9 +333,25 @@
     removalMode: true
   });
 
+  // --- Keep map still while drawing ---
+  let isDrawing = false;
+  map.on('pm:drawstart', () => { isDrawing = true; map.doubleClickZoom.disable(); });
+  map.on('pm:drawend',   () => { isDrawing = false; map.doubleClickZoom.enable(); });
+  map.on('pm:create',    () => { isDrawing = false; map.doubleClickZoom.enable(); });
+
+  // Pin-placement (suppressed while drawing/editing/dragging or when clicking UI)
+  map.on('click', e => {
+    if (clickCameFromUI(e)) return;
+    if (isDrawing) return;
+    if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
+    if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
+    if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
+    setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin');
+  });
+
   // Track the "current" shape for metrics/copy/centering
-  let selectedLayer = null;     // the one user clicked last
-  let lastShapeLayer = null;    // last drawn/selected SHAPE (polygon/rectangle/circle only)
+  let selectedLayer = null;  // last thing clicked (if shape)
+  let lastShapeLayer = null; // last POLYGON/CIRCLE
 
   const mType  = byId('m-type');
   const mArea  = byId('m-area');
@@ -394,7 +403,7 @@
       selectedLayer.setStyle(activeStyle);
     }
     if (isPolygonish(layer)) {
-      lastShapeLayer = layer;         // <-- remember the last polygon/circle
+      lastShapeLayer = layer;
       updateMetrics(layer);
     } else {
       updateMetrics(null);
@@ -404,7 +413,6 @@
   function bindEditableHandlers(layer, isImported = false) {
     if (layer.setStyle && !isImported && isPolygonish(layer)) layer.setStyle(defaultStyle);
 
-    // Only shapes (not the pin) should affect selection/metrics
     if (isPolygonish(layer)) {
       layer.on('click', () => {
         setSelected(layer);
@@ -419,7 +427,6 @@
       layer.on('pm:enable', () => { if (layer.setStyle) layer.setStyle(activeStyle); });
       layer.on('pm:disable',() => { if (layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); });
 
-      // populate metrics initially
       updateMetrics(layer);
     }
   }
@@ -493,6 +500,7 @@
     return JSON.stringify(geom.coordinates);
   }
 
+  // Clipboard helpers
   async function copyText(text) {
     if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
     const ta = document.createElement('textarea');
