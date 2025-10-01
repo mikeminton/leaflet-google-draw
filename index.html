@@ -38,17 +38,14 @@
       box-shadow: 0 2px 12px rgba(0,0,0,.18); font: 14px system-ui, sans-serif;
 
       display: flex; align-items: center; gap: 8px;
-      flex-wrap: nowrap;               /* <- no wrapping */
-      white-space: nowrap;             /* <- keep everything on one line */
-      overflow-x: auto; overflow-y: hidden;  /* <- allow horizontal scroll if needed */
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: thin;
+      flex-wrap: nowrap; white-space: nowrap;
+      overflow-x: auto; overflow-y: hidden;
+      -webkit-overflow-scrolling: touch; scrollbar-width: thin;
     }
     .toolbar select, .toolbar input, .toolbar button {
       padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px;
-      flex: 0 0 auto; /* prevent flex growing/shrinking unpredictably */
+      flex: 0 0 auto;
     }
-    /* Make the main query field flexible but keep it one-line */
     #q { min-width: 320px; flex: 1 1 420px; }
     .toolbar .spacer { width: 6px; flex: 0 0 auto; }
 
@@ -68,30 +65,31 @@
       position: absolute; z-index: 1000; left: 10px; bottom: 50px;
       background: #fff; border-radius: 10px; padding: 10px 12px;
       box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif;
-      min-width: 260px; max-width: 360px;
+      min-width: 260px; max-width: 380px;
     }
     .metrics h4 { margin: 0 0 6px 0; font-size: 14px; }
     .metrics .row { margin: 4px 0; }
     .metrics code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
+    .metrics .btn {
+      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer;
+    }
+    .metrics .btn + .btn { margin-left: 6px; }
 
-    /* Keep one line even on small screens; user can horizontal-scroll the bar */
     @media (max-width: 640px) {
       #q { min-width: 260px; flex-basis: 300px; }
     }
 
-    /* additional spacing to lower the base mapping options control */
-    .leaflet-top.leaflet-right .leaflet-control-layers {
-      margin-top: 75px !important;
-    }
-    
-    /* remove the search button from all map layers */
+    /* Lower the base layers control */
+    .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 75px !important; }
+
+    /* (Kept, but that geocoder control is gone from your code) */
     .leaflet-control-geocoder { display: none !important; }
   </style>
 </head>
 <body>
 <div id="map">
   <!-- Unified Search + Drawing toolbar (single line) -->
-  <div class="toolbar">
+  <div class="toolbar" id="ui-toolbar">
     <select id="mode" title="Search mode">
       <option value="postcode">Postcode / Address</option>
       <option value="latlon">Lat, Lon</option>
@@ -132,9 +130,8 @@
     <div class="row">Area: <code id="m-area">—</code></div>
     <div class="row">Perimeter: <code id="m-perim">—</code></div>
     <div class="row" style="margin-top:8px;">
-      <button id="btn-copy" style="padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#f7f7f7;cursor:pointer;">
-        Copy Coords
-      </button>
+      <button id="btn-copy" class="btn">Copy Coords</button>
+      <button id="btn-center-shape" class="btn">Center on Shape</button>
     </div>
   </div>
 </div>
@@ -174,6 +171,18 @@
     fullscreenControl: true
   });
 
+  // Prevent clicks on UI/controls from triggering map click handlers
+  function blockEventsFor(selector) {
+    const el = document.querySelector(selector);
+    if (!el) return;
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+  }
+  blockEventsFor('#ui-toolbar');
+  blockEventsFor('#metrics');
+  blockEventsFor('#info');
+  blockEventsFor('.leaflet-control-container');
+
   // Initial pin
   let pin = L.marker(centre).addTo(map).bindPopup("29 Green Lane, SY3 0NS").openPopup();
 
@@ -209,7 +218,16 @@
     updateInfo(lat, lon, labelHint);
   }
 
-  map.on('click', e => setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin'));
+  // Guard: ignore clicks that originate from UI/controls
+  function clickCameFromUI(evt) {
+    const t = evt.originalEvent?.target;
+    return !!(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control'));
+  }
+
+  map.on('click', e => {
+    if (clickCameFromUI(e)) return; // <-- don't move pin for UI clicks
+    setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin');
+  });
 
   // ---------- Google base (async ready) ----------
   async function ensureGoogle() {
@@ -297,36 +315,6 @@
     } catch { alert('Search failed (network or rate limit).'); }
   }
 
-  // ---------- Export / Import ----------
-  byId('btn-export').onclick = () => {
-    const feats = [];
-    map.eachLayer(l => {
-      if (l.pm && l.toGeoJSON) {
-        const gj = l.toGeoJSON();
-        if (gj.type === 'Feature') feats.push(gj);
-        else if (gj.type === 'FeatureCollection') feats.push(...gj.features);
-      }
-    });
-    const fc = { type: 'FeatureCollection', features: feats };
-    const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/json' });
-    const a = Object.assign(document.createElement('a'), {
-      href: URL.createObjectURL(blob), download: 'drawings.geojson'
-    });
-    a.click(); URL.revokeObjectURL(a.href);
-  };
-
-  byId('btn-import').onclick = () => byId('file-import').click();
-  byId('file-import').onchange = async ev => {
-    const file = ev.target.files[0]; if (!file) return;
-    try {
-      const text = await file.text();
-      const gj = JSON.parse(text);
-      const layerGroup = L.geoJSON(gj, { style: defaultStyle }).addTo(map);
-      try { map.fitBounds(layerGroup.getBounds(), { maxZoom: 19 }); } catch {}
-      layerGroup.eachLayer(l => bindEditableHandlers(l, true));
-    } catch { alert('Invalid GeoJSON.'); }
-  };
-
   // ---------- Geoman drawing & EDITING + Metrics ----------
   const defaultStyle = { color: "#00AEEF", weight: 2, fillOpacity: 0.18 };
   const activeStyle  = { color: "#007ACC", weight: 2, fillOpacity: 0.20 };
@@ -352,13 +340,23 @@
     removalMode: true
   });
 
-  let selectedLayer = null;
+  // Track the "current" shape for metrics/copy/centering
+  let selectedLayer = null;     // the one user clicked last
+  let lastShapeLayer = null;    // last drawn/selected SHAPE (polygon/rectangle/circle only)
+
   const mType  = byId('m-type');
   const mArea  = byId('m-area');
   const mPerim = byId('m-perim');
 
+  function isPolygonish(layer) {
+    return (layer instanceof L.Polygon) || (layer instanceof L.Circle);
+  }
+
   function updateMetrics(layer) {
-    if (!layer) { mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; return; }
+    if (!layer || !isPolygonish(layer)) {
+      mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—';
+      return;
+    }
     if (layer instanceof L.Circle) {
       const r = layer.getRadius();
       const area = Math.PI * r * r;
@@ -379,47 +377,61 @@
         const peri = lengthKm * 1000;
         mArea.textContent = `${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`;
         mPerim.textContent = `${peri.toFixed(2)} m`;
-      } else if (type === 'LineString' || type === 'MultiLineString') {
-        const lengthKm = turf.length(gj, { units: 'kilometers' });
-        mArea.textContent = `—`;
-        mPerim.textContent = `${(lengthKm*1000).toFixed(2)} m`;
       } else {
         mArea.textContent = `—`; mPerim.textContent = `—`;
       }
-    } catch { mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; }
+    } catch {
+      mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—';
+    }
   }
 
   function setSelected(layer) {
-    if (selectedLayer && selectedLayer.setStyle) selectedLayer.setStyle(defaultStyle);
+    if (selectedLayer && selectedLayer.setStyle && isPolygonish(selectedLayer)) {
+      selectedLayer.setStyle(defaultStyle);
+    }
     selectedLayer = layer;
-    if (selectedLayer && selectedLayer.setStyle) selectedLayer.setStyle(activeStyle);
-    updateMetrics(selectedLayer);
+    if (selectedLayer && selectedLayer.setStyle && isPolygonish(selectedLayer)) {
+      selectedLayer.setStyle(activeStyle);
+    }
+    if (isPolygonish(layer)) {
+      lastShapeLayer = layer;         // <-- remember the last polygon/circle
+      updateMetrics(layer);
+    } else {
+      updateMetrics(null);
+    }
   }
 
   function bindEditableHandlers(layer, isImported = false) {
-    if (layer.setStyle && !isImported) layer.setStyle(defaultStyle);
-    layer.on('click', () => {
-      setSelected(layer);
-      if (layer.pm) {
-        if (layer.pm.enabled()) layer.pm.disable();
-        else layer.pm.enable({ allowSelfIntersection: false, snappable: true, snapDistance: 20 });
-      }
-    });
-    layer.on('pm:edit',   () => updateMetrics(layer));
-    layer.on('pm:dragend',() => updateMetrics(layer));
-    layer.on('pm:enable', () => { if (layer.setStyle) layer.setStyle(activeStyle); });
-    layer.on('pm:disable',() => { if (layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); });
-    updateMetrics(layer);
+    if (layer.setStyle && !isImported && isPolygonish(layer)) layer.setStyle(defaultStyle);
+
+    // Only shapes (not the pin) should affect selection/metrics
+    if (isPolygonish(layer)) {
+      layer.on('click', () => {
+        setSelected(layer);
+        if (layer.pm) {
+          if (layer.pm.enabled()) layer.pm.disable();
+          else layer.pm.enable({ allowSelfIntersection: false, snappable: true, snapDistance: 20 });
+        }
+      });
+
+      layer.on('pm:edit',   () => updateMetrics(layer));
+      layer.on('pm:dragend',() => updateMetrics(layer));
+      layer.on('pm:enable', () => { if (layer.setStyle) layer.setStyle(activeStyle); });
+      layer.on('pm:disable',() => { if (layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); });
+
+      // populate metrics initially
+      updateMetrics(layer);
+    }
   }
 
   map.on("pm:create", e => {
     const layer = e.layer;
-    if (layer.setStyle) layer.setStyle(defaultStyle);
-    if (layer.pm && layer.pm.enable) {
+    if (layer.setStyle && isPolygonish(layer)) layer.setStyle(defaultStyle);
+    if (layer.pm && layer.pm.enable && isPolygonish(layer)) {
       layer.pm.enable({ allowSelfIntersection: false, snappable: true, snapDistance: 20 });
     }
     bindEditableHandlers(layer);
-    setSelected(layer);
+    if (isPolygonish(layer)) setSelected(layer); // make it current
     console.log("Created feature:", layer.toGeoJSON());
   });
 
@@ -431,19 +443,17 @@
     if (map.pm.globalEditEnabled()) map.pm.toggleGlobalEditMode();
     if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) map.pm.toggleGlobalDragMode();
     map.eachLayer(l => { if (l.pm && l.pm.enabled && l.pm.enabled()) l.pm.disable(); });
-    if (selectedLayer) updateMetrics(selectedLayer);
+    if (lastShapeLayer) updateMetrics(lastShapeLayer);
   };
-  
+
+  // ---------- Copy coords & Center buttons ----------
   const btnCopy = byId('btn-copy');
-  
+  const btnCenterShape = byId('btn-center-shape');
+
   btnCopy.addEventListener('click', async () => {
-    if (!selectedLayer) {
-      alert('Select or draw a shape first.'); 
-      return;
-    }
-  
+    if (!lastShapeLayer) { alert('Draw or select a polygon/circle first.'); return; }
     try {
-      const text = buildCoordsText(selectedLayer);
+      const text = buildCoordsText(lastShapeLayer);
       await copyText(text);
       flashBtn(btnCopy, 'Copied!');
     } catch (err) {
@@ -451,52 +461,51 @@
       alert('Failed to copy.');
     }
   });
-  
-  // Build a sensible coordinates payload (GeoJSON geometry.coordinates)
-  // Circles are converted to a polygon for export.
+
+  btnCenterShape.addEventListener('click', () => {
+    if (lastShapeLayer && isPolygonish(lastShapeLayer)) {
+      if (lastShapeLayer instanceof L.Circle) {
+        const c = lastShapeLayer.getLatLng();
+        map.flyTo(c, Math.max(map.getZoom(), 18));
+      } else {
+        const b = lastShapeLayer.getBounds();
+        map.fitBounds(b, { maxZoom: Math.max(map.getZoom(), 19) });
+      }
+    } else if (pin) {
+      map.flyTo(pin.getLatLng(), Math.max(map.getZoom(), 18));
+    }
+  });
+
+  // Build coordinates payload from shape (GeoJSON geometry.coordinates)
   function buildCoordsText(layer) {
-    // Leaflet toGeoJSON for most shapes
-    const gj = layer.toGeoJSON();
-  
-    // Special-case Circle into a polygon (using turf)
     if (layer instanceof L.Circle) {
       const c = layer.getLatLng();
       const rMeters = layer.getRadius();
       const poly = turf.circle([c.lng, c.lat], rMeters / 1000, { steps: 64, units: 'kilometers' });
       return JSON.stringify(poly.geometry.coordinates);
     }
-  
-    // Everything else: polygons/lines/points
+    const gj = layer.toGeoJSON();
     const geom = gj && gj.geometry ? gj.geometry : null;
     if (!geom) throw new Error('No geometry found.');
+    if (!(geom.type === 'Polygon' || geom.type === 'MultiPolygon')) {
+      throw new Error('Only polygons/circles are exported here.');
+    }
     return JSON.stringify(geom.coordinates);
   }
 
-  // Write to clipboard with a fallback
   async function copyText(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text);
-    }
-    // Fallback (older browsers): temporary textarea
+    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
     const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.top = '-9999px';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
+    ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-9999px';
+    document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
   }
-  
-  // Tiny UX helper
+
   function flashBtn(btn, msg) {
     const orig = btn.textContent;
-    btn.textContent = msg;
-    btn.disabled = true;
+    btn.textContent = msg; btn.disabled = true;
     setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200);
   }
-  
+
   // Initial pin info
   (async () => { await updateInfo(centre[0], centre[1], '29 Green Lane, SY3 0NS'); })();
 </script>
