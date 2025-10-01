@@ -192,23 +192,45 @@
   const elLatLon = byId('latlon');
   const elEN = byId('en');
 
+  // UK postcode normaliser/checker
+  function normalizeUKPostcode(str) {
+    if (!str) return null;
+    const s = str.toUpperCase().replace(/\s+/g, '');
+    // Basic shape check; we’ll let the API validate fully
+    return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s) ? s : null;
+  }
+  
   async function updateInfo(lat, lon, labelHint = '') {
     const latStr = lat.toFixed(6), lonStr = lon.toFixed(6);
     elLatLon.textContent = `${latStr}, ${lonStr}`;
-
+  
     const [E, N] = proj4(WGS84, OSGB, [lon, lat]);
     elEN.textContent = `${Math.round(E)}, ${Math.round(N)}`;
-
+  
+    let addr = labelHint || 'Unknown location';
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latStr}&lon=${lonStr}&addressdetails=1&zoom=18&accept-language=en-GB`;
       const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const data = await resp.json();
-      const addr = data?.display_name || labelHint || 'Unknown location';
-      elAddr.innerHTML = `Address: <em>${addr}</em>`;
-      pin.setPopupContent(addr);
-    } catch {
-      elAddr.innerHTML = `Address: <em>${labelHint || 'Lookup failed'}</em>`;
-    }
+      addr = data?.display_name || addr;
+    } catch {}
+  
+    // Authoritative postcode near this lat/lon
+    try {
+      const pr = await fetch(`https://api.postcodes.io/postcodes?lon=${lonStr}&lat=${latStr}&limit=1`);
+      const pj = await pr.json();
+      const pc = pj?.result?.[0]?.postcode;
+      if (pc) {
+        // Prefer showing the official postcode clearly
+        elAddr.innerHTML = `Address: <em>${addr}</em><br/>Postcode: <code>${pc}</code>`;
+        pin.setPopupContent(`${addr} (${pc})`);
+        return;
+      }
+    } catch {}
+  
+    // Fallback if no postcode found
+    elAddr.innerHTML = `Address: <em>${addr}</em>`;
+    pin.setPopupContent(addr);
   }
 
   function setPin(lat, lon, labelHint = '', recenter = false) {
@@ -299,7 +321,25 @@
       setPin(lat, lon, `OSGB36: ${Math.round(E)}, ${Math.round(N)}`, /*recenter*/ true);return;
     }
 
+    // Postcode / Address mode
+    // If it *looks* like a UK postcode, use postcodes.io (authoritative).
+    // Otherwise, fall back to Nominatim full-text search.
     try {
+      const norm = normalizeUKPostcode(raw);
+      if (norm) {
+        const resp = await fetch(`https://api.postcodes.io/postcodes/${norm}`);
+        const j = await resp.json();
+        if (j && j.status === 200 && j.result) {
+          const { latitude: lat, longitude: lon, postcode } = j.result;
+          setPin(lat, lon, postcode, /*recenter*/ true);
+          return;
+        } else {
+          alert('Postcode not found in postcodes.io; falling back to address search.');
+          // fall through to Nominatim
+        }
+      }
+    
+      // Nominatim address search (fallback or non-postcode text)
       const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&addressdetails=1&accept-language=en-GB`;
       const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const j = await r.json();
