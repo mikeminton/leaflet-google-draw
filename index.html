@@ -328,12 +328,26 @@
     } catch { alert('Search failed (network or rate limit).'); }
   }
 
-  // --- Keep map still while drawing ---
+  // --- Keep map still while drawing (polygon-only dblclick handling) ---
   let isDrawing = false;
-  map.on('pm:drawstart', () => { isDrawing = true; map.doubleClickZoom.disable(); });
-  map.on('pm:drawend',   () => { isDrawing = false; map.doubleClickZoom.enable(); });
-  map.on('pm:create',    () => { isDrawing = false; map.doubleClickZoom.enable(); });
-
+  
+  map.on('pm:drawstart', (e) => {
+    isDrawing = true;
+    if (e.shape === 'Polygon') {
+      map.doubleClickZoom.disable();  // prevent zoom so dblclick can finish polygon
+    }
+  });
+  
+  map.on('pm:drawend', () => {
+    isDrawing = false;
+    map.doubleClickZoom.enable();     // restore normal dblclick zoom
+  });
+  
+  map.on('pm:create', () => {
+    isDrawing = false;
+    map.doubleClickZoom.enable();     // make sure it’s re-enabled after creation
+  });
+  
   // Pin-placement (Shift+Click only)
   map.on('click', e => {
     if (clickCameFromUI(e)) return;
@@ -353,7 +367,8 @@
     snappable: true,
     snapDistance: 20,
     allowSelfIntersection: false,
-    continueDrawing: false
+    continueDrawing: false,
+    finishOn: 'dblclick'   // <-- double-click closes the polygon
   });
 
   map.pm.addControls({
