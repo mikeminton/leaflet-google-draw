@@ -131,6 +131,11 @@
     <div class="row">Type: <code id="m-type">—</code></div>
     <div class="row">Area: <code id="m-area">—</code></div>
     <div class="row">Perimeter: <code id="m-perim">—</code></div>
+    <div class="row" style="margin-top:8px;">
+      <button id="btn-copy" style="padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#f7f7f7;cursor:pointer;">
+        Copy Coords
+      </button>
+    </div>
   </div>
 </div>
 
@@ -428,7 +433,70 @@
     map.eachLayer(l => { if (l.pm && l.pm.enabled && l.pm.enabled()) l.pm.disable(); });
     if (selectedLayer) updateMetrics(selectedLayer);
   };
+  
+  const btnCopy = byId('btn-copy');
+  
+  btnCopy.addEventListener('click', async () => {
+    if (!selectedLayer) {
+      alert('Select or draw a shape first.'); 
+      return;
+    }
+  
+    try {
+      const text = buildCoordsText(selectedLayer);
+      await copyText(text);
+      flashBtn(btnCopy, 'Copied!');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to copy.');
+    }
+  });
+  
+  // Build a sensible coordinates payload (GeoJSON geometry.coordinates)
+  // Circles are converted to a polygon for export.
+  function buildCoordsText(layer) {
+    // Leaflet toGeoJSON for most shapes
+    const gj = layer.toGeoJSON();
+  
+    // Special-case Circle into a polygon (using turf)
+    if (layer instanceof L.Circle) {
+      const c = layer.getLatLng();
+      const rMeters = layer.getRadius();
+      const poly = turf.circle([c.lng, c.lat], rMeters / 1000, { steps: 64, units: 'kilometers' });
+      return JSON.stringify(poly.geometry.coordinates);
+    }
+  
+    // Everything else: polygons/lines/points
+    const geom = gj && gj.geometry ? gj.geometry : null;
+    if (!geom) throw new Error('No geometry found.');
+    return JSON.stringify(geom.coordinates);
+  }
 
+  // Write to clipboard with a fallback
+  async function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    // Fallback (older browsers): temporary textarea
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+  
+  // Tiny UX helper
+  function flashBtn(btn, msg) {
+    const orig = btn.textContent;
+    btn.textContent = msg;
+    btn.disabled = true;
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200);
+  }
+  
   // Initial pin info
   (async () => { await updateInfo(centre[0], centre[1], '29 Green Lane, SY3 0NS'); })();
 </script>
