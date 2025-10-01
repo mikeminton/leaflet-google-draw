@@ -31,25 +31,22 @@
     html, body { height: 100%; margin: 0; }
     #map { width: 100%; height: 100vh; position: relative; }
 
-    /* One-line toolbar: no-wrap, full width, horizontal scroll on overflow */
+    /* One-line toolbar */
     .toolbar {
       position: absolute; z-index: 1000; top: 10px; left: 60px; right: 10px;
       background: #fff; border-radius: 12px; padding: 8px 10px;
       box-shadow: 0 2px 12px rgba(0,0,0,.18); font: 14px system-ui, sans-serif;
-
       display: flex; align-items: center; gap: 8px;
       flex-wrap: nowrap; white-space: nowrap;
-      overflow-x: auto; overflow-y: hidden;
-      -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+      overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
     }
     .toolbar select, .toolbar input, .toolbar button {
-      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px;
-      flex: 0 0 auto;
+      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; flex: 0 0 auto;
     }
     #q { min-width: 320px; flex: 1 1 420px; }
     .toolbar .spacer { width: 6px; flex: 0 0 auto; }
 
-    /* Info panel (pin details) */
+    /* Pin info panel */
     .info {
       position: absolute; z-index: 1000; right: 10px; bottom: 50px;
       background: #fff; border-radius: 10px; padding: 10px 12px;
@@ -75,20 +72,18 @@
     }
     .metrics .btn + .btn { margin-left: 6px; }
 
-    @media (max-width: 640px) {
-      #q { min-width: 260px; flex-basis: 300px; }
-    }
+    @media (max-width: 640px) { #q { min-width: 260px; flex-basis: 300px; } }
 
     /* Lower the base layers control */
     .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 75px !important; }
 
-    /* Defensive: in case any geocoder control sneaks in */
+    /* Defensive */
     .leaflet-control-geocoder { display: none !important; }
   </style>
 </head>
 <body>
 <div id="map">
-  <!-- Unified Search + Drawing toolbar (single line) -->
+  <!-- Unified Search + Drawing toolbar -->
   <div class="toolbar" id="ui-toolbar">
     <select id="mode" title="Search mode">
       <option value="postcode">Postcode / Address</option>
@@ -96,9 +91,7 @@
       <option value="en">Easting, Northing</option>
     </select>
 
-    <input id="q" type="text"
-           placeholder="SY3 0NS  |  52.677027, -2.773167  |  349000, 306000" />
-
+    <input id="q" type="text" placeholder="SY3 0NS  |  52.677027, -2.773167  |  349000, 306000" />
     <button id="go">Search</button>
 
     <span class="spacer"></span>
@@ -116,11 +109,11 @@
 
   <!-- Pin info panel -->
   <div class="info" id="info">
-    <h4>DROPPED PIN INFORMATION:</h4>
-    <div class="row" id="addr">Address: <em>—</em></div>
+    <h4>LOCATION INFORMATION:</h4>
+    <div class="row">Postcode: <code id="postcode">—</code></div>
     <div class="row">Lat/Lon: <code id="latlon">—</code></div>
     <div class="row">Easting/Northing: <code id="en">—</code></div>
-    <div class="row" style="opacity:.8">Tip: Click a polygon to edit its vertices. Shift+click adds a vertex, right-click removes (while in edit mode).</div>
+    <div class="row" style="opacity:.8">Tip: Shift+Click to drop a pin. Drawing clicks won’t move the map.</div>
   </div>
 
   <!-- Polygon metrics panel -->
@@ -146,8 +139,6 @@
   proj4.defs('EPSG:27700', '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs');
   const WGS84 = 'EPSG:4326';
   const OSGB  = 'EPSG:27700';
-  
-  const mLongest = document.getElementById('m-longest');
 
   const byId = id => document.getElementById(id);
   const isNum = v => typeof v === 'number' && isFinite(v) && !isNaN(v);
@@ -185,10 +176,10 @@
   blockEventsFor('.leaflet-control-container');
 
   // Initial pin
-  let pin = L.marker(centre).addTo(map).bindPopup("29 Green Lane, SY3 0NS").openPopup();
+  let pin = L.marker(centre).addTo(map).bindPopup("SY3 0NS").openPopup();
 
-  // Pin info panel
-  const elAddr = byId('addr');
+  // Elements for info panel
+  const elPostcode = byId('postcode');
   const elLatLon = byId('latlon');
   const elEN = byId('en');
 
@@ -196,53 +187,37 @@
   function normalizeUKPostcode(str) {
     if (!str) return null;
     const s = str.toUpperCase().replace(/\s+/g, '');
-    // Basic shape check; we’ll let the API validate fully
     return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s) ? s : null;
   }
-  
-  async function updateInfo(lat, lon, labelHint = '') {
+
+  // Update only coords + authoritative postcode (no Nominatim)
+  async function updateInfo(lat, lon) {
     const latStr = lat.toFixed(6), lonStr = lon.toFixed(6);
     elLatLon.textContent = `${latStr}, ${lonStr}`;
-  
+
     const [E, N] = proj4(WGS84, OSGB, [lon, lat]);
     elEN.textContent = `${Math.round(E)}, ${Math.round(N)}`;
-  
-    let addr = labelHint || 'Unknown location';
-    try {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latStr}&lon=${lonStr}&addressdetails=1&zoom=18&accept-language=en-GB`;
-      const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      const data = await resp.json();
-      addr = data?.display_name || addr;
-    } catch {}
-  
+
     // Authoritative postcode near this lat/lon
+    let pc = '—';
     try {
       const pr = await fetch(`https://api.postcodes.io/postcodes?lon=${lonStr}&lat=${latStr}&limit=1`);
       const pj = await pr.json();
-      const pc = pj?.result?.[0]?.postcode;
-      if (pc) {
-        // Prefer showing the official postcode clearly
-        elAddr.innerHTML = `Address: <em>${addr}</em><br/>Postcode: <code>${pc}</code>`;
-        pin.setPopupContent(`${addr} (${pc})`);
-        return;
-      }
+      pc = pj?.result?.[0]?.postcode || '—';
     } catch {}
-  
-    // Fallback if no postcode found
-    elAddr.innerHTML = `Address: <em>${addr}</em>`;
-    pin.setPopupContent(addr);
+    elPostcode.textContent = pc;
+    pin.setPopupContent(pc);
   }
 
-  function setPin(lat, lon, labelHint = '', recenter = false) {
+  function setPin(lat, lon, recenter = false) {
     if (!isNum(lat) || !isNum(lon)) return;
     pin.setLatLng([lat, lon]);
     pin.addTo(map).openPopup();
     if (recenter) {
       map.setView([lat, lon], Math.max(map.getZoom(), 18));
     }
-    updateInfo(lat, lon, labelHint);
+    updateInfo(lat, lon);
   }
-
 
   // Guard: ignore clicks that originate from UI/controls
   function clickCameFromUI(evt) {
@@ -309,7 +284,7 @@
       if (parts.length !== 2) return alert('Use: 52.677027, -2.773167');
       const lat = parseFloat(parts[0]), lon = parseFloat(parts[1]);
       if (!isNum(lat) || !isNum(lon)) return alert('Invalid lat/lon.');
-      setPin(lat, lon, 'Lat/Lon', true); return;
+      setPin(lat, lon, true); return;
     }
 
     if (mode === 'en') {
@@ -318,34 +293,33 @@
       const E = parseFloat(parts[0]), N = parseFloat(parts[1]);
       if (!isNum(E) || !isNum(N)) return alert('Invalid Easting/Northing.');
       const [lon, lat] = proj4(OSGB, WGS84, [E, N]);
-      setPin(lat, lon, `OSGB36: ${Math.round(E)}, ${Math.round(N)}`, /*recenter*/ true);return;
+      setPin(lat, lon, true); return;
     }
 
-    // Postcode / Address mode
-    // If it *looks* like a UK postcode, use postcodes.io (authoritative).
-    // Otherwise, fall back to Nominatim full-text search.
+    // Postcode / Address mode:
+    // If it's a valid UK postcode, use postcodes.io (authoritative).
+    // Otherwise, forward-geocode with Nominatim (coords only; we won't show its address text).
     try {
       const norm = normalizeUKPostcode(raw);
       if (norm) {
         const resp = await fetch(`https://api.postcodes.io/postcodes/${norm}`);
         const j = await resp.json();
         if (j && j.status === 200 && j.result) {
-          const { latitude: lat, longitude: lon, postcode } = j.result;
-          setPin(lat, lon, postcode, /*recenter*/ true);
+          const { latitude: lat, longitude: lon } = j.result;
+          setPin(lat, lon, true);
           return;
         } else {
           alert('Postcode not found in postcodes.io; falling back to address search.');
-          // fall through to Nominatim
         }
       }
-    
-      // Nominatim address search (fallback or non-postcode text)
-      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&addressdetails=1&accept-language=en-GB`;
+
+      // Fallback: Nominatim for coordinates only
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
       const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const j = await r.json();
       if (j && j.length) {
-        const { lat, lon, display_name, boundingbox } = j[0];
-        setPin(parseFloat(lat), parseFloat(lon), display_name, true);
+        const { lat, lon, boundingbox } = j[0];
+        setPin(parseFloat(lat), parseFloat(lon), true);
         if (boundingbox) {
           const bb = [[+boundingbox[0], +boundingbox[2]],[+boundingbox[1], +boundingbox[3]]];
           map.fitBounds(bb, { maxZoom: 19 });
@@ -353,6 +327,23 @@
       } else alert('No results.');
     } catch { alert('Search failed (network or rate limit).'); }
   }
+
+  // --- Keep map still while drawing ---
+  let isDrawing = false;
+  map.on('pm:drawstart', () => { isDrawing = true; map.doubleClickZoom.disable(); });
+  map.on('pm:drawend',   () => { isDrawing = false; map.doubleClickZoom.enable(); });
+  map.on('pm:create',    () => { isDrawing = false; map.doubleClickZoom.enable(); });
+
+  // Pin-placement (Shift+Click only)
+  map.on('click', e => {
+    if (clickCameFromUI(e)) return;
+    if (isDrawing) return;
+    if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
+    if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
+    if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
+    if (!e.originalEvent || !e.originalEvent.shiftKey) return;
+    setPin(e.latlng.lat, e.latlng.lng, false);
+  });
 
   // ---------- Geoman drawing & EDITING + Metrics ----------
   const defaultStyle = { color: "#00AEEF", weight: 2, fillOpacity: 0.18 };
@@ -379,32 +370,13 @@
     removalMode: true
   });
 
-  // --- Keep map still while drawing ---
-  let isDrawing = false;
-  map.on('pm:drawstart', () => { isDrawing = true; map.doubleClickZoom.disable(); });
-  map.on('pm:drawend',   () => { isDrawing = false; map.doubleClickZoom.enable(); });
-  map.on('pm:create',    () => { isDrawing = false; map.doubleClickZoom.enable(); });
-
-  // Pin-placement (suppressed while drawing/editing/dragging or when clicking UI)
-  map.on('click', e => {
-    if (clickCameFromUI(e)) return;
-    if (isDrawing) return;
-    if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
-    if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
-    if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
-  
-    // Only allow pin drop on Shift+Click, and do NOT recenter the map
-    if (!e.originalEvent || !e.originalEvent.shiftKey) return;
-    setPin(e.latlng.lat, e.latlng.lng, 'Dropped pin', /*recenter*/ false);
-  });
-
-  // Track the "current" shape for metrics/copy/centering
-  let selectedLayer = null;  // last thing clicked (if shape)
-  let lastShapeLayer = null; // last POLYGON/CIRCLE
+  let selectedLayer = null;   // last thing clicked (if shape)
+  let lastShapeLayer = null;  // last POLYGON/CIRCLE
 
   const mType  = byId('m-type');
   const mArea  = byId('m-area');
   const mPerim = byId('m-perim');
+  const mLongest = byId('m-longest');
 
   function isPolygonish(layer) {
     return (layer instanceof L.Polygon) || (layer instanceof L.Circle);
@@ -424,7 +396,7 @@
       mType.textContent = 'Circle';
       mArea.textContent = `${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`;
       mPerim.textContent = `${peri.toFixed(2)} m`;
-      if (mLongest) mLongest.textContent = '—'; // <-- add this
+      if (mLongest) mLongest.textContent = '—'; // ensure no stale value
       return;
     }
     try {
@@ -438,8 +410,8 @@
         const peri = lengthKm * 1000;
         mArea.textContent = `${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`;
         mPerim.textContent = `${peri.toFixed(2)} m`;
-      
-        // NEW: Longest edge
+
+        // Longest edge
         if (mLongest) {
           const longest = longestEdgeMetersFromGeom(gj.geometry);
           mLongest.textContent = `${longest.toFixed(2)} m`;
@@ -450,6 +422,7 @@
       }
     } catch {
       mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—';
+      if (mLongest) mLongest.textContent='—';
     }
   }
 
@@ -573,35 +546,30 @@
     setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200);
   }
 
-  // Return longest edge length (metres) from a Polygon/MultiPolygon GeoJSON geometry
+  // Longest edge length (metres) from Polygon/MultiPolygon geometry
   function longestEdgeMetersFromGeom(geom) {
     let longest = 0;
-  
     const processRing = (ring) => {
-      // ring: array of [lon, lat]
       const n = ring.length;
       if (n < 2) return;
       for (let i = 0; i < n; i++) {
         const a = ring[i];
-        const b = ring[(i + 1) % n]; // close ring
+        const b = ring[(i + 1) % n];
         const km = turf.distance(a, b, { units: 'kilometers' });
         const m = km * 1000;
         if (m > longest) longest = m;
       }
     };
-  
     if (geom.type === 'Polygon') {
-      // coords: [ [ring1...], [hole1...], ... ]
       geom.coordinates.forEach(processRing);
     } else if (geom.type === 'MultiPolygon') {
-      // coords: [ [ [ring1...], [hole1...] ], ... ]
       geom.coordinates.forEach(poly => poly.forEach(processRing));
     }
     return longest;
   }
 
   // Initial pin info
-  (async () => { await updateInfo(centre[0], centre[1], '29 Green Lane, SY3 0NS'); })();
+  (async () => { await updateInfo(centre[0], centre[1]); })();
 </script>
 
 <noscript>Enable JavaScript to view the map.</noscript>
