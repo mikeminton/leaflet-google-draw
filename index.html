@@ -424,6 +424,7 @@
       mType.textContent = 'Circle';
       mArea.textContent = `${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`;
       mPerim.textContent = `${peri.toFixed(2)} m`;
+      if (mLongest) mLongest.textContent = '—'; // <-- add this
       return;
     }
     try {
