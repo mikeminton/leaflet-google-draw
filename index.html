@@ -173,15 +173,6 @@
   // Initial pin
   let pin = L.marker(centre).addTo(map).bindPopup("29 Green Lane, SY3 0NS").openPopup();
 
-  // Optional map-embedded geocoder control
-  L.Control.geocoder({ defaultMarkGeocode: false, placeholder: 'Search…' })
-    .on('markgeocode', e => {
-      const { center, name, bbox } = e.geocode;
-      setPin(center.lat, center.lng, name);
-      if (bbox) map.fitBounds(bbox);
-    })
-    .addTo(map);
-
   // Pin info panel
   const elAddr = byId('addr');
   const elLatLon = byId('latlon');
