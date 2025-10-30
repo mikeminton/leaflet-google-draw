@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Multi‑Engine Routing — Anti‑Wiggle (Fixed Panels & Clicks)</title>
+  <title>Leaflet + Multi‑Engine Routing — Road‑true & Panels Placed</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -74,8 +74,8 @@
     .via-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1px solid #ddd; border-radius:14px; margin-right:6px; }
     .via-chip button { border:none; background:transparent; cursor:pointer; }
 
-    /* Info panel moved to top-left to avoid Layers control */
-    .info { position: absolute; z-index: 1300; left: 10px; top: 70px; min-width: 280px; max-width: 360px; }
+    /* Info panel now bottom-right, stays above bottom dock */
+    .info { position: absolute; z-index: 1300; right: 10px; bottom: 10px; min-width: 280px; max-width: 360px; transition: bottom .15s ease; }
 
     /* Street View */
     #sv-panel { position: absolute; z-index: 1450; right: 10px; bottom: 10px; width: 420px; height: 300px;
@@ -169,12 +169,12 @@
         <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
       </div>
       <div class="row" style="opacity:.8">
-        Anti‑wiggle enabled. Press <b>P</b> if you ever “lose” these panels.
+        Road‑true geometry enabled. Press <b>P</b> if you ever “lose” these panels.
       </div>
     </div>
   </div>
 
-  <!-- Info (top-left now) -->
+  <!-- Info (bottom-right now, auto-offset above dock/SV) -->
   <div class="card info" id="info">
     <h4>LOCATION INFORMATION:</h4>
     <div class="row">Postcode: <code id="postcode">—</code></div>
@@ -244,7 +244,7 @@
 
   // Panels toggle
   const bottomDock = byId('bottom-dock');
-  byId('toggle-panels').onclick = () => bottomDock.style.display = (bottomDock.style.display==='none' ? 'flex' : 'none');
+  byId('toggle-panels').onclick = () => { bottomDock.style.display = (bottomDock.style.display==='none' ? 'flex' : 'none'); placeInfoPanel(); };
   document.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='p') byId('toggle-panels').click(); });
 
   // Basemaps
@@ -281,6 +281,16 @@
     console.warn('Google base unavailable', e);
     L.control.layers({ "Esri Satellite": esriImagery, "OSM Streets": osmStreets }, { "Esri Labels (Hybrid)": esriLabels }, { collapsed: false }).addTo(map);
   }
+
+  // Info panel placement logic (keeps it above dock / SV)
+  const infoPanel = byId('info'), svPanel = byId('sv-panel');
+  function placeInfoPanel(){
+    const dock = bottomDock.style.display==='none' ? 0 : (bottomDock.getBoundingClientRect().height || 0);
+    const sv = svPanel.style.display==='none' ? 0 : (svPanel.getBoundingClientRect().height || 0);
+    const offset = Math.max(dock, sv);
+    infoPanel.style.bottom = (10 + offset) + 'px';
+  }
+  window.addEventListener('resize', placeInfoPanel);
 
   // Info panel plumbing
   const elPostcode = byId('postcode'), elLatLon = byId('latlon'), elEN = byId('en');
@@ -357,8 +367,8 @@
   });
 
   // Street View
-  let svService=null, panorama=null; const svPanel=byId('sv-panel'), svTitle=byId('sv-title'), svBtnClose=byId('sv-close'), svBtnPop=byId('sv-popout');
-  function showSVPanel(show){ svPanel.style.display=show?'block':'none'; }
+  let svService=null, panorama=null; const svTitle=byId('sv-title'), svBtnClose=byId('sv-close'), svBtnPop=byId('sv-popout');
+  function showSVPanel(show){ svPanel.style.display=show?'block':'none'; placeInfoPanel(); }
   function ensureSV(){ if(!window.google||!google.maps) return false; if(!svService) svService=new google.maps.StreetViewService(); if(!panorama) panorama=new google.maps.StreetViewPanorama(byId('pano'),{addressControl:true,linksControl:true,panControl:true,zoomControl:true,fullscreenControl:true}); return true; }
   function openSVAt(lat,lon){ if(!ensureSV()) return alert('Google Maps API not ready'); const loc={lat,lng:lon}; svService.getPanorama({location:loc,radius:70},(data,status)=>{ if(status==='OK'&&data?.location){ panorama.setPano(data.location.pano); panorama.setPov({heading:0,pitch:0}); panorama.setVisible(true); svTitle.textContent='Street View'; svBtnPop.onclick=()=>window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`,'_blank','noopener'); showSVPanel(true);} else alert('No Street View here.'); }); }
   byId('btn-sv-center').addEventListener('click',()=>{ const c=map.getCenter(); openSVAt(c.lat,c.lng); });
@@ -393,16 +403,19 @@
   }
   async function snapIfNeeded(obj){ const s=await osrmNearest(obj.lat,obj.lon); return { lat:s.lat, lon:s.lon, label: obj.label }; }
 
-  function simplifyLine(coords, tolMeters=12){
+  function simplifyAdaptive(coords, totalMeters){
+    // Target 2–6 m based on trip length (<=2km -> 2m ; >=20km -> 6m)
+    const km = totalMeters/1000;
+    const tol = Math.max(2, Math.min(6, 2 + (km-2)*(4/18))); // clamp
     try{
       const line = turf.lineString(coords.map(ll=>[ll[1], ll[0]]));
-      const simplified = turf.simplify(line, { tolerance: tolMeters/111320, highQuality: true });
+      const simplified = turf.simplify(line, { tolerance: tol/111320, highQuality: true });
       const out = simplified.geometry.coordinates.map(([lon,lat])=>[lat,lon]);
       return out.length >= 2 ? out : coords;
     }catch{ return coords; }
   }
   function scrubMicroDetours(coords){
-    const maxShort = 35; const minAngle = 110;
+    const maxShort = 20; const minAngle = 130; // gentler: only kill obvious tiny in-out
     const dst = (a,b)=>turf.distance([a[1],a[0]],[b[1],b[0]],{units:'meters'});
     const angle = (a,b,c)=>{
       const v1=[a[0]-b[0], a[1]-b[1]], v2=[c[0]-b[0], c[1]-b[1]];
@@ -416,7 +429,7 @@
       for(let i=1;i<pts.length-1;i++){
         const A=pts[i-1], B=pts[i], C=pts[i+1];
         const ab=dst(A,B), bc=dst(B,C), ang=angle(A,B,C);
-        if (ab<maxShort && bc<maxShort && ang>minAngle){ changed=true; } else { keep.push(B); }
+        if (ab<=maxShort && bc<=maxShort && ang>=minAngle){ changed=true; } else { keep.push(B); }
       }
       keep.push(pts[pts.length-1]); pts=keep;
     }
@@ -463,12 +476,6 @@
     if(m) routeLayer.removeLayer(m);
     renderVias();
   }
-  btnClearVias.addEventListener('click',()=>{
-    routeState.vias=[];
-    routeState.viaMarkers.forEach(m=>routeLayer.removeLayer(m));
-    routeState.viaMarkers=[];
-    renderVias();
-  });
 
   function setRoutePoint(which, lat, lon, label=''){
     const obj={lat,lon,label};
@@ -531,6 +538,23 @@
     if (!j||!j.routes) return [];
     return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
   }
+
+  function googleRouteToFullPath(route){
+    // Concatenate all step paths (higher fidelity than overview_path)
+    const pts = [];
+    (route.legs||[]).forEach(leg=>{
+      (leg.steps||[]).forEach(step=>{
+        const path = step.path || [];
+        for (let i=0;i<path.length;i++) pts.push([path[i].lat(), path[i].lng()]);
+      });
+    });
+    // Fallback: overview_path if steps missing
+    if (!pts.length && route.overview_path){
+      for (const p of route.overview_path) pts.push([p.lat(), p.lng()]);
+    }
+    return pts;
+  }
+
   async function fetchGoogle(profile, start, end, vias, avoids){
     if (!window.google?.maps) return [];
     const svc = new google.maps.DirectionsService();
@@ -548,7 +572,7 @@
     const res = await new Promise(resolve => svc.route(req,(r,st)=>resolve(st==='OK'?r:null)));
     if (!res?.routes) return [];
     return res.routes.map(r=>{
-      const path = (r.overview_path||[]).map(ll=>[ll.lat(), ll.lng()]);
+      const path = googleRouteToFullPath(r); // full fidelity
       const legs = r.legs && r.legs[0];
       const distance = legs?.distance?.value || 0;
       const duration = legs?.duration?.value || 0;
@@ -578,7 +602,7 @@
 
   function addRouteToUI(coords, meta, paletteIndex){
     const color = PALETTE[paletteIndex % PALETTE.length];
-    const poly=L.polyline(coords,{color,weight:4,opacity:0.85}).addTo(routeLayer);
+    const poly=L.polyline(coords,{color,weight:4,opacity:0.95}).addTo(routeLayer);
     const mid=midpointLatLng(coords); const badge=makeNumberBadge(routeState.polylines.length+1,color,mid).addTo(routeLayer);
 
     const km=(meta.distance/1000).toFixed(2);
@@ -635,7 +659,7 @@
         for (const rt of osrmRoutes){
           let coords = rt.coords;
           coords = scrubMicroDetours(coords);
-          coords = simplifyLine(coords, 12);
+          coords = simplifyAdaptive(coords, rt.distance);
           const key = hashCoords(coords);
           if (overallSeen.has(key)) continue;
           if (baselineDistance==null) baselineDistance = rt.distance;
@@ -651,7 +675,7 @@
           for (const rt of gRoutes){
             let coords = rt.coords;
             coords = scrubMicroDetours(coords);
-            coords = simplifyLine(coords, 12);
+            coords = simplifyAdaptive(coords, rt.distance);
             const key = hashCoords(coords);
             if (overallSeen.has(key)) continue;
             if (baselineDistance==null) baselineDistance = rt.distance;
@@ -682,11 +706,11 @@
     map.fitBounds(bounds, {padding:[30,30]});
   });
 
-  byId('btn-route').addEventListener('click', planRoutes);
-  byId('btn-clear-route').addEventListener('click', clearRoutes);
+  byId('btn-route').addEventListener('click', ()=>{ planRoutes(); });
+  byId('btn-clear-route').addEventListener('click', ()=>{ clearRoutes(); });
 
-  // Init
-  (async()=>{ await updateInfo(centre[0], centre[1]); })();
+  // Initial placement and info
+  (async()=>{ await updateInfo(centre[0], centre[1]); placeInfoPanel(); })();
 </script>
 
 <noscript>Enable JavaScript to view the map.</noscript>
