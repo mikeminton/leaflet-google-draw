@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Google + Multi-Engine Routing (All Alternatives) + UK Search + Draw/Edit</title>
+  <title>Leaflet + Google + Multi-Engine Routing (All Alternatives) — Fixed Click Selection</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -418,13 +418,16 @@
 
   function setActiveRoute(idx){
     routeState.activeIdx=idx;
-    routeState.polylines.forEach((pl,i)=>pl.setStyle({weight: i===idx?6:4, opacity: i===idx?0.95:0.6, dashArray: i===idx?null:'6,6'}));
-    Array.from(rList.children).forEach((el,i)=>{ if(el.classList.contains('route-item')) el.classList.toggle('active', i===idx); });
+    routeState.polylines.forEach((pl,i)=>{
+      pl.setStyle({weight: i===idx?6:4, opacity: i===idx?0.95:0.6, dashArray: i===idx?null:'6,6'});
+      if (i===idx && pl.bringToFront) pl.bringToFront();
+    });
+    const items = Array.from(rList.querySelectorAll('.route-item'));
+    items.forEach((el,i)=> el.classList.toggle('active', i===idx));
     if(idx>=0 && routeState.polylines[idx]) map.fitBounds(routeState.polylines[idx].getBounds(), {padding:[30,30]});
   }
 
   function hashCoords(coords){
-    // Dedup hash: round to 5 dp to avoid tiny differences; stringify first 200 points + length
     const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]);
     return JSON.stringify([rounded.length, rounded.slice(0,200)]);
   }
@@ -434,71 +437,72 @@
       if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
       if(!routeState.end){ const e=await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.'); setRoutePoint('end',e.lat,e.lon,e.label); }
       const {start,end}=routeState; if(!start||!end) return;
-      clearRoutes(); updateModeLabel();
+      clearRoutes(); rMode.textContent = elRM.value || '—';
 
-      const profile = elRM.value; // driving/walking/cycling
+      const profile = elRM.value;
       const requests = [];
-
-      // OSRM (always, no key)
       const osrmUrl = `https://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson&alternatives=true&steps=false`;
       requests.push(fetch(osrmUrl).then(r=>r.json()).then(j => ({ provider:'OSRM', routes:(j.routes||[]).map(rt=>({ distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) })) })).catch(()=>({provider:'OSRM', routes:[]})));
 
-      // Google Directions (if available and checkbox checked)
-      if (elUseGoogle.checked && window.google?.maps) {
-        await google.maps.importLibrary('routes').catch(()=>{}); // newer lib, but DirectionsService is in core
+      if (byId('use-google').checked && window.google?.maps) {
+        await google.maps.importLibrary('routes').catch(()=>{});
         requests.push(new Promise((resolve)=>{
           const svc = new google.maps.DirectionsService();
           const gMode = profile==='driving'?'DRIVING':profile==='walking'?'WALKING':'BICYCLING';
-          svc.route({
-            origin: {lat:start.lat, lng:start.lon},
-            destination: {lat:end.lat, lng:end.lon},
-            travelMode: gMode,
-            provideRouteAlternatives: true
-          }, (res,status)=>{
-            if(status!=='OK' || !res?.routes) return resolve({provider:'Google', routes:[]});
-            const routes = res.routes.map(r=>{
-              // Decode overview_path LatLng[]
-              const path = (r.overview_path || []).map(ll=>[ll.lat(), ll.lng()]);
-              const legs = r.legs && r.legs[0];
-              const distance = legs?.distance?.value || 0;
-              const duration = legs?.duration?.value || 0;
-              return { distance, duration, coords: path };
-            });
-            resolve({ provider:'Google', routes });
+          svc.route({ origin:{lat:start.lat,lng:start.lon}, destination:{lat:end.lat,lng:end.lon}, travelMode:gMode, provideRouteAlternatives:true },
+            (res,status)=>{
+              if(status!=='OK' || !res?.routes) return resolve({provider:'Google', routes:[]});
+              const routes = res.routes.map(r=>{
+                const path = (r.overview_path || []).map(ll=>[ll.lat(), ll.lng()]);
+                const legs = r.legs && r.legs[0];
+                const distance = legs?.distance?.value || 0;
+                const duration = legs?.duration?.value || 0;
+                return { distance, duration, coords: path };
+              });
+              resolve({ provider:'Google', routes });
           });
         }));
       }
 
-      // Gather
       const results = await Promise.all(requests);
-      const palette = PALETTE.slice();
       const seen = new Set();
-      let count = 0;
+      let displayOrder = 0;
 
       results.forEach(({provider, routes})=>{
         routes.forEach(route=>{
           if(!route.coords || route.coords.length<2) return;
           const hash = hashCoords(route.coords);
-          if(seen.has(hash)) return; // deduplicate similar
+          if(seen.has(hash)) return;
           seen.add(hash);
-          const color = palette[count % palette.length];
+
+          // Stable index BEFORE push
+          const idx = routeState.polylines.length;
+          const color = PALETTE[idx % PALETTE.length];
+
           const poly = L.polyline(route.coords, {color, weight:4, opacity:0.7}).addTo(routeLayer);
-          const mid = midpointLatLng(route.coords);
-          const badge = makeNumberBadge(++count, color, mid).addTo(routeLayer);
           routeState.polylines.push(poly);
+
+          const mid = midpointLatLng(route.coords);
+          const badge = makeNumberBadge(++displayOrder, color, mid).addTo(routeLayer);
           routeState.labels.push(badge);
           routeState.meta.push({provider, distance:route.distance, duration:route.duration, color});
+
           const km=(route.distance/1000).toFixed(2);
           const mins=Math.round(route.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
-          const item=document.createElement('div'); item.className='route-item';
+
+          const item=document.createElement('div');
+          item.className='route-item';
           item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
-            <div><b>${count}.</b> ${km} km • ${durTxt} <span class="provider-tag">${provider}</span></div>`;
-          item.onclick=()=>setActiveRoute(count-1);
+            <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">${provider}</span></div>`;
+
+          item.onclick = () => setActiveRoute(idx);
+          poly.on('click', () => setActiveRoute(idx));
+
           rList.appendChild(item);
         });
       });
 
-      if(count===0) alert('No routes found from any provider.');
+      if(routeState.polylines.length===0) alert('No routes found from any provider.');
       else setActiveRoute(0);
     }catch(err){
       console.error(err); alert('Routing failed. Check points and try again.');
@@ -507,8 +511,8 @@
 
   // Use / Copy selected route
   function getActiveRouteCoords(){ const idx=routeState.activeIdx; if(idx==null||idx<0) return null; const pl=routeState.polylines[idx]; if(!pl) return null; const latlngs=pl.getLatLngs(); return Array.isArray(latlngs[0])?latlngs.flat():latlngs; }
-  btnUseSelected.addEventListener('click',()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const poly=L.polyline(pts,{color:'#007ACC',weight:3,opacity:0.95}).addTo(map); if(poly.pm&&poly.pm.enable) poly.pm.enable({snappable:true,snapDistance:20}); });
-  btnCopySelected.addEventListener('click', async ()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const coords=pts.map(ll=>[ll.lng,ll.lat]); const text=JSON.stringify(coords); await copyText(text); });
+  byId('btn-use-selected').addEventListener('click',()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const poly=L.polyline(pts,{color:'#007ACC',weight:3,opacity:0.95}).addTo(map); if(poly.pm&&poly.pm.enable) poly.pm.enable({snappable:true,snapDistance:20}); });
+  byId('btn-copy-selected').addEventListener('click', async ()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const coords=pts.map(ll=>[ll.lng,ll.lat]); const text=JSON.stringify(coords); if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(text); else { const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.top='-9999px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); ta.remove(); } });
 
   // Init
   (async()=>{ await updateInfo(centre[0], centre[1]); })();
