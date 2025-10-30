@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Multi‑Engine Routing — Road‑true & Panels Placed</title>
+  <title>Leaflet + Car Navigation — Road‑True Routing</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -44,7 +44,7 @@
     }
     .toolbar label { display:flex; align-items:center; gap:6px; padding:4px 8px; }
     #q { min-width: 280px; flex: 1 1 360px; }
-    .mini { width: 200px; }
+    .mini { width: 220px; }
     .toolbar .spacer { width: 6px; flex: 0 0 auto; }
 
     .leaflet-control { z-index: 1200 !important; }
@@ -74,8 +74,8 @@
     .via-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1px solid #ddd; border-radius:14px; margin-right:6px; }
     .via-chip button { border:none; background:transparent; cursor:pointer; }
 
-    /* Info panel now bottom-right, stays above bottom dock */
-    .info { position: absolute; z-index: 1300; right: 10px; bottom: 10px; min-width: 280px; max-width: 360px; transition: bottom .15s ease; }
+    /* Info panel bottom-right with +30px drop */
+    .info { position: absolute; z-index: 1300; right: 10px; bottom: 40px; min-width: 280px; max-width: 360px; transition: bottom .15s ease; }
 
     /* Street View */
     #sv-panel { position: absolute; z-index: 1450; right: 10px; bottom: 10px; width: 420px; height: 300px;
@@ -118,24 +118,12 @@
 
     <span class="spacer"></span>
 
-    <!-- Routing controls -->
+    <!-- Car routing -->
     <input id="route-start" class="mini" type="text" placeholder="Start: address / 52.6,-2.7 / 349000,306000" />
     <input id="route-end"   class="mini" type="text" placeholder="End: address / 52.7,-2.8 / 340000,300000" />
-    <select id="route-mode" title="Travel mode">
-      <option value="driving">Driving</option>
-      <option value="walking">Walking</option>
-      <option value="cycling">Cycling</option>
-    </select>
-    <label title="Prefer unusual paths"><input type="checkbox" id="prefer-odd" checked> Explore off‑beat</label>
-    <label title="Avoid motorways (Google only)"><input type="checkbox" id="avoid-hwy"> Avoid highways</label>
+    <label title="Avoid motorways (Google only)"><input type="checkbox" id="avoid-hwy"> Avoid motorways</label>
     <label title="Avoid tolls (Google only)"><input type="checkbox" id="avoid-tolls"> Avoid tolls</label>
     <label title="Avoid ferries"><input type="checkbox" id="avoid-ferries"> Avoid ferries</label>
-    <select id="detour-level" title="Generate artificial detour vias">
-      <option value="none">No detours</option>
-      <option value="light">Detour: Light</option>
-      <option value="medium" selected>Detour: Medium</option>
-      <option value="heavy">Detour: Heavy</option>
-    </select>
     <button id="btn-pin-start" title="Use current pin as Start">Pin→Start</button>
     <button id="btn-pin-end" title="Use current pin as End">Pin→End</button>
     <button id="btn-swap" title="Swap start/end">Swap</button>
@@ -159,8 +147,7 @@
     </div>
 
     <div class="card routebox" id="routebox">
-      <h4>ROUTES:</h4>
-      <div class="row">Mode: <code id="r-mode">—</code></div>
+      <h4>ROUTES (Car):</h4>
       <div class="row">Vias (Ctrl+Click to add): <span id="vias"></span> <button id="clear-vias" class="btn">Clear vias</button></div>
       <div id="r-list" class="row"></div>
       <div class="row" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
@@ -169,12 +156,12 @@
         <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
       </div>
       <div class="row" style="opacity:.8">
-        Road‑true geometry enabled. Press <b>P</b> if you ever “lose” these panels.
+        Strict road geometry. Press <b>P</b> if you ever “lose” these panels.
       </div>
     </div>
   </div>
 
-  <!-- Info (bottom-right now, auto-offset above dock/SV) -->
+  <!-- Info (bottom-right with +30) -->
   <div class="card info" id="info">
     <h4>LOCATION INFORMATION:</h4>
     <div class="row">Postcode: <code id="postcode">—</code></div>
@@ -282,13 +269,13 @@
     L.control.layers({ "Esri Satellite": esriImagery, "OSM Streets": osmStreets }, { "Esri Labels (Hybrid)": esriLabels }, { collapsed: false }).addTo(map);
   }
 
-  // Info panel placement logic (keeps it above dock / SV)
+  // Info panel placement logic: stay above dock/SV and drop +30
   const infoPanel = byId('info'), svPanel = byId('sv-panel');
   function placeInfoPanel(){
     const dock = bottomDock.style.display==='none' ? 0 : (bottomDock.getBoundingClientRect().height || 0);
     const sv = svPanel.style.display==='none' ? 0 : (svPanel.getBoundingClientRect().height || 0);
     const offset = Math.max(dock, sv);
-    infoPanel.style.bottom = (10 + offset) + 'px';
+    infoPanel.style.bottom = (40 + offset) + 'px'; // +30 over previous base
   }
   window.addEventListener('resize', placeInfoPanel);
 
@@ -311,7 +298,6 @@
   let selectedLayer=null, lastShapeLayer=null;
   const mType=byId('m-type'), mArea=byId('m-area'), mPerim=byId('m-perim'), mLongest=byId('m-longest');
   const isPolygonish = layer => (layer instanceof L.Polygon) || (layer instanceof L.Circle);
-
   function longestEdgeMetersFromGeom(geom) {
     let longest = 0;
     const processRing = (ring) => {
@@ -325,14 +311,10 @@
         if (m > longest) longest = m;
       }
     };
-    if (geom.type === 'Polygon') {
-      geom.coordinates.forEach(processRing);
-    } else if (geom.type === 'MultiPolygon') {
-      geom.coordinates.forEach(poly => poly.forEach(processRing));
-    }
+    if (geom.type === 'Polygon') geom.coordinates.forEach(processRing);
+    else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(poly => poly.forEach(processRing));
     return longest;
   }
-
   function updateMetrics(layer){
     if(!layer || !isPolygonish(layer)){ mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; if(mLongest) mLongest.textContent='—'; return; }
     if(layer instanceof L.Circle){
@@ -351,17 +333,14 @@
       layer.on('pm:edit',()=>updateMetrics(layer)); layer.on('pm:dragend',()=>updateMetrics(layer)); layer.on('pm:enable',()=>{ if(layer.setStyle) layer.setStyle(activeStyle); }); layer.on('pm:disable',()=>{ if(layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); }); updateMetrics(layer); } }
   map.on("pm:create", e=>{ const layer=e.layer; if(layer.setStyle&&isPolygonish(layer)) layer.setStyle(defaultStyle); if(layer.pm&&layer.pm.enable&&isPolygonish(layer)) layer.pm.enable({allowSelfIntersection:false,snappable:true,snapDistance:20}); bindEditableHandlers(layer); if(isPolygonish(layer)) setSelected(layer); });
 
-  // Simple map click behaviours
+  // Map clicks
   map.on('click', e=>{
     const t=e.originalEvent?.target;
     if(t && t.closest && t.closest('.toolbar, #bottom-dock, .info, .leaflet-control, #sv-panel')) return;
     if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
     if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
     if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
-    if(e.originalEvent?.ctrlKey){
-      addViaPoint(e.latlng.lat, e.latlng.lng, 'via');
-      return;
-    }
+    if(e.originalEvent?.ctrlKey){ addViaPoint(e.latlng.lat, e.latlng.lng, 'via'); return; }
     if(!e.originalEvent || !e.originalEvent.shiftKey) return;
     setPin(e.latlng.lat, e.latlng.lng, false);
   });
@@ -375,23 +354,20 @@
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
   map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
 
-  // ---------- Routing ----------
+  // ---------- Routing (Car only) ----------
   const routeLayer=L.layerGroup().addTo(map);
   let startMarker=null, endMarker=null;
-  const elRS=byId('route-start'), elRE=byId('route-end'), elRM=byId('route-mode'), elUseGoogle=byId('use-google');
-  const rMode=byId('r-mode'), rList=byId('r-list');
+  const elRS=byId('route-start'), elRE=byId('route-end'), elUseGoogle=byId('use-google');
+  const rList=byId('r-list');
   const btnPinStart=byId('btn-pin-start'), btnPinEnd=byId('btn-pin-end'), btnSwap=byId('btn-swap'), btnRoute=byId('btn-route'), btnClearRt=byId('btn-clear-route');
   const btnUseSelected=byId('btn-use-selected'), btnCopySelected=byId('btn-copy-selected'), btnZoomAll=byId('btn-zoom-all');
-  const chkOdd=byId('prefer-odd'), chkAvoidHwy=byId('avoid-hwy'), chkAvoidTolls=byId('avoid-tolls'), chkAvoidFerries=byId('avoid-ferries'), selDetour=byId('detour-level');
+  const chkAvoidHwy=byId('avoid-hwy'), chkAvoidTolls=byId('avoid-tolls'), chkAvoidFerries=byId('avoid-ferries');
   const viasWrap=byId('vias'), btnClearVias=byId('clear-vias');
 
   const routeState={ start:null, end:null, polylines:[], labels:[], meta:[], activeIdx:-1, vias:[], viaMarkers:[] };
   const PALETTE=['#e53935','#43a047','#1e88e5','#8e24aa','#fb8c00','#039be5','#6d4c41','#c0ca33','#8d6e63','#3949ab','#00897b','#f4511e'];
 
-  function updateModeLabel(){ rMode.textContent = elRM.value || '—'; }
-  updateModeLabel(); elRM.addEventListener('change', updateModeLabel);
-
-  // Helpers: snapping & cleaning
+  // Snapping
   async function osrmNearest(lat,lon){
     try{
       const url = `https://router.project-osrm.org/nearest/v1/driving/${lon},${lat}`;
@@ -403,63 +379,10 @@
   }
   async function snapIfNeeded(obj){ const s=await osrmNearest(obj.lat,obj.lon); return { lat:s.lat, lon:s.lon, label: obj.label }; }
 
-  function simplifyAdaptive(coords, totalMeters){
-    // Target 2–6 m based on trip length (<=2km -> 2m ; >=20km -> 6m)
-    const km = totalMeters/1000;
-    const tol = Math.max(2, Math.min(6, 2 + (km-2)*(4/18))); // clamp
-    try{
-      const line = turf.lineString(coords.map(ll=>[ll[1], ll[0]]));
-      const simplified = turf.simplify(line, { tolerance: tol/111320, highQuality: true });
-      const out = simplified.geometry.coordinates.map(([lon,lat])=>[lat,lon]);
-      return out.length >= 2 ? out : coords;
-    }catch{ return coords; }
-  }
-  function scrubMicroDetours(coords){
-    const maxShort = 20; const minAngle = 130; // gentler: only kill obvious tiny in-out
-    const dst = (a,b)=>turf.distance([a[1],a[0]],[b[1],b[0]],{units:'meters'});
-    const angle = (a,b,c)=>{
-      const v1=[a[0]-b[0], a[1]-b[1]], v2=[c[0]-b[0], c[1]-b[1]];
-      const dot=v1[0]*v2[0]+v1[1]*v2[1]; const m1=Math.hypot(v1[0],v1[1]), m2=Math.hypot(v2[0],v2[1]);
-      if(m1===0||m2===0) return 0; const cos = Math.min(1, Math.max(-1, dot/(m1*m2))); return Math.acos(cos)*180/Math.PI;
-    };
-    let changed=true; let pts=coords.slice();
-    while(changed){
-      changed=false;
-      const keep=[pts[0]];
-      for(let i=1;i<pts.length-1;i++){
-        const A=pts[i-1], B=pts[i], C=pts[i+1];
-        const ab=dst(A,B), bc=dst(B,C), ang=angle(A,B,C);
-        if (ab<=maxShort && bc<=maxShort && ang>=minAngle){ changed=true; } else { keep.push(B); }
-      }
-      keep.push(pts[pts.length-1]); pts=keep;
-    }
-    return pts;
-  }
-
-  function hashCoords(coords){
-    const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]);
-    return JSON.stringify([rounded.length, rounded.slice(0,200)]);
-  }
-  function midpointLatLng(latlngs){ return latlngs[Math.floor(latlngs.length/2)]; }
-  function makeNumberBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:`<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
-
-  function setActiveRoute(idx){
-    routeState.activeIdx=idx;
-    routeState.polylines.forEach((pl,i)=>{
-      pl.setStyle({weight: i===idx?6:4, opacity: i===idx?0.95:0.6, dashArray: i===idx?null:'6,6'});
-      if (i===idx && pl.bringToFront) pl.bringToFront();
-    });
-    const items = Array.from(rList.querySelectorAll('.route-item'));
-    items.forEach((el,i)=> el.classList.toggle('active', i===idx));
-    if(idx>=0 && routeState.polylines[idx]) map.fitBounds(routeState.polylines[idx].getBounds(), {padding:[30,30]});
-  }
-
   function renderVias(){
     viasWrap.innerHTML='';
     routeState.vias.forEach((v,i)=>{
-      const chip=document.createElement('span');
-      chip.className='via-chip';
-      chip.innerHTML=`Via ${i+1} <button title="remove">✕</button>`;
+      const chip=document.createElement('span'); chip.className='via-chip'; chip.innerHTML=`Via ${i+1} <button title="remove">✕</button>`;
       chip.querySelector('button').onclick=()=>removeVia(i);
       viasWrap.appendChild(chip);
     });
@@ -498,49 +421,19 @@
 
   function clearRoutes(){ routeState.polylines.forEach(pl=>routeLayer.removeLayer(pl)); routeState.labels.forEach(lb=>routeLayer.removeLayer(lb)); routeState.polylines=[]; routeState.labels=[]; routeState.meta=[]; routeState.activeIdx=-1; rList.innerHTML=''; }
 
-  // Detours
-  function detourOffsetsAdaptive(start,end,level){
-    const distKm = turf.distance([start.lon,start.lat],[end.lon,end.lat], {units:'kilometers'});
-    const base = Math.min(Math.max(distKm*0.08, 0.12), 1.2); // 120m..1200m
-    const m = base * 1000;
-    if(level==='none') return [];
-    if(level==='light') return [ m*0.6, -m*0.6 ];
-    if(level==='medium') return [ m*0.8, -m*0.8, m*1.4, -m*1.4 ];
-    return [ m*0.9, -m*0.9, m*1.7, -m*1.7, m*2.3, -m*2.3 ];
-  }
-  async function buildDetourViasSnapped(start, end, level){
-    const mids = [];
-    try{
-      const startPt = turf.point([start.lon, start.lat]);
-      const endPt = turf.point([end.lon, end.lat]);
-      const mid = turf.midpoint(startPt, endPt);
-      const bearing = turf.bearing(startPt, endPt);
-      const perp1 = bearing + 90;
-      const offs = detourOffsetsAdaptive(start,end,level);
-      for (const m of offs){
-        const via = turf.destination(mid, Math.abs(m)/1000, m>0?perp1:perp1-180, {units:'kilometers'});
-        let [lon, lat] = via.geometry.coordinates;
-        const snapped = await osrmNearest(lat, lon);
-        mids.push({lat: snapped.lat, lon: snapped.lon, label: m>0?`via-R${Math.round(Math.abs(m))}`:`via-L${Math.round(Math.abs(m))}`});
-      }
-    }catch{}
-    return mids;
-  }
-
   // Providers
-  async function fetchOSRM(profile, start, end, vias, avoidFerries){
+  async function fetchOSRM(start, end, vias, avoidFerries){
     const coords = [[start.lon,start.lat], ...vias.map(v=>[v.lon,v.lat]), [end.lon,end.lat]]
       .map(pair=>pair.join(',')).join(';');
-    const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'true', steps:'false' });
+    const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'true', steps:'true' });
     if (avoidFerries) params.set('exclude','ferry');
-    const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?${params}`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?${params}`;
     const j = await fetch(url).then(r=>r.json()).catch(()=>null);
     if (!j||!j.routes) return [];
-    return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
+    return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?`via(${vias.length})`:'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
   }
 
   function googleRouteToFullPath(route){
-    // Concatenate all step paths (higher fidelity than overview_path)
     const pts = [];
     (route.legs||[]).forEach(leg=>{
       (leg.steps||[]).forEach(step=>{
@@ -548,21 +441,19 @@
         for (let i=0;i<path.length;i++) pts.push([path[i].lat(), path[i].lng()]);
       });
     });
-    // Fallback: overview_path if steps missing
     if (!pts.length && route.overview_path){
       for (const p of route.overview_path) pts.push([p.lat(), p.lng()]);
     }
     return pts;
   }
 
-  async function fetchGoogle(profile, start, end, vias, avoids){
+  async function fetchGoogle(start, end, vias, avoids){
     if (!window.google?.maps) return [];
     const svc = new google.maps.DirectionsService();
-    const gMode = profile==='driving'?'DRIVING':profile==='walking'?'WALKING':'BICYCLING';
     const req = {
       origin: {lat:start.lat, lng:start.lon},
       destination: {lat:end.lat, lng:end.lon},
-      travelMode: gMode,
+      travelMode: 'DRIVING',
       provideRouteAlternatives: true
     };
     if (vias && vias.length){
@@ -572,37 +463,33 @@
     const res = await new Promise(resolve => svc.route(req,(r,st)=>resolve(st==='OK'?r:null)));
     if (!res?.routes) return [];
     return res.routes.map(r=>{
-      const path = googleRouteToFullPath(r); // full fidelity
+      const path = googleRouteToFullPath(r);
       const legs = r.legs && r.legs[0];
       const distance = legs?.distance?.value || 0;
       const duration = legs?.duration?.value || 0;
-      return { provider:'Google', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance, duration, coords: path };
+      return { provider:'Google', tag: vias.length?`via(${vias.length})`:'base', distance, duration, coords: path };
     });
   }
 
   function percentDiff(a,b){ return b ? Math.abs(a-b)/b : 0; }
+  function hashCoords(coords){ const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]); return JSON.stringify([rounded.length, rounded.slice(0,200)]); }
+  function midpointLatLng(latlngs){ return latlngs[Math.floor(latlngs.length/2)]; }
+  function makeNumberBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:`<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
 
-  async function resolvePoint(text){
-    const raw=(text||'').trim(); if(!raw) return null;
-    const parts=raw.replace(/[()]/g,'').split(/[,\s]+/).filter(Boolean);
-    if(parts.length===2 && !isNaN(+parts[0]) && !isNaN(+parts[1])){
-      const a=+parts[0], b=+parts[1];
-      if(Math.abs(a)>1000 && Math.abs(b)>1000){ const [lon,lat]=proj4(OSGB,WGS84,[a,b]); return await snapIfNeeded({lat,lon,label:'E/N'}); }
-      if(Math.abs(a)<=90 && Math.abs(b)<=180){ return await snapIfNeeded({lat:a,lon:b,label:'Lat/Lon'}); }
-    }
-    const maybePC=normalizeUKPostcode(raw);
-    if(maybePC){ try{ const r=await fetch(`https://api.postcodes.io/postcodes/${maybePC}`); const j=await r.json(); if(j?.status===200&&j.result) return await snapIfNeeded({lat:j.result.latitude, lon:j.result.longitude, label:j.result.postcode}); }catch{} }
-    try{
-      const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
-      const r=await fetch(url,{headers:{'Accept':'application/json'}}); const j=await r.json();
-      if(j&&j.length) return await snapIfNeeded({lat:+j[0].lat, lon:+j[0].lon, label:(j[0].display_name||'').split(',')[0]||'Address'});
-    }catch{}
-    return null;
+  function setActiveRoute(idx){
+    routeState.activeIdx=idx;
+    routeState.polylines.forEach((pl,i)=>{
+      pl.setStyle({weight: i===idx?6:4, opacity: i===idx?0.98:0.7, dashArray: i===idx?null:'6,6'});
+      if (i===idx && pl.bringToFront) pl.bringToFront();
+    });
+    const items = Array.from(rList.querySelectorAll('.route-item'));
+    items.forEach((el,i)=> el.classList.toggle('active', i===idx));
+    if(idx>=0 && routeState.polylines[idx]) map.fitBounds(routeState.polylines[idx].getBounds(), {padding:[30,30]});
   }
 
   function addRouteToUI(coords, meta, paletteIndex){
     const color = PALETTE[paletteIndex % PALETTE.length];
-    const poly=L.polyline(coords,{color,weight:4,opacity:0.95}).addTo(routeLayer);
+    const poly=L.polyline(coords,{color,weight:4,opacity:0.98}).addTo(routeLayer);
     const mid=midpointLatLng(coords); const badge=makeNumberBadge(routeState.polylines.length+1,color,mid).addTo(routeLayer);
 
     const km=(meta.distance/1000).toFixed(2);
@@ -622,6 +509,24 @@
     routeState.meta.push({...meta, color});
   }
 
+  async function resolvePoint(text){
+    const raw=(text||'').trim(); if(!raw) return null;
+    const parts=raw.replace(/[()]/g,'').split(/[,\s]+/).filter(Boolean);
+    if(parts.length===2 && !isNaN(+parts[0]) && !isNaN(+parts[1])){
+      const a=+parts[0], b=+parts[1];
+      if(Math.abs(a)>1000 && Math.abs(b)>1000){ const [lon,lat]=proj4(OSGB,WGS84,[a,b]); return await snapIfNeeded({lat,lon,label:'E/N'}); }
+      if(Math.abs(a)<=90 && Math.abs(b)<=180){ return await snapIfNeeded({lat:a,lon:b,label:'Lat/Lon'}); }
+    }
+    const maybePC=normalizeUKPostcode(raw);
+    if(maybePC){ try{ const r=await fetch(`https://api.postcodes.io/postcodes/${maybePC}`); const j=await r.json(); if(j?.status===200&&j.result) return await snapIfNeeded({lat:j.result.latitude, lon:j.result.longitude, label:j.result.postcode}); }catch{} }
+    try{
+      const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
+      const r=await fetch(url,{headers:{'Accept':'application/json'}}); const j=await r.json();
+      if(j&&j.length) return await snapIfNeeded({lat:+j[0].lat, lon:+j[0].lon, label:(j[0].display_name||'').split(',')[0]||'Address'});
+    }catch{}
+    return null;
+  }
+
   async function planRoutes(){
     try{
       if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
@@ -631,9 +536,8 @@
       routeState.end   = await snapIfNeeded(routeState.end);
 
       const {start,end}=routeState; if(!start||!end) return;
-      clearRoutes(); rMode.textContent = elRM.value || '—';
+      clearRoutes();
 
-      const profile = elRM.value;
       const overallSeen = new Set();
       let baselineDistance = null;
       const avoids=[];
@@ -641,53 +545,35 @@
       if (chkAvoidTolls.checked) avoids.push('TOLLS');
       if (chkAvoidFerries.checked) avoids.push('FERRIES');
 
-      // Via sets: manual + adaptive snapped detours
-      let synthetic = [];
-      if (chkOdd.checked || selDetour.value!=='none'){
-        synthetic = await buildDetourViasSnapped(start, end, selDetour.value);
-      }
-      const allViaSets = [];
-      if (routeState.vias.length) allViaSets.push(routeState.vias);
-      synthetic.forEach(v => allViaSets.push([v]));
-      allViaSets.unshift([]);
-
       let paletteIndex=0;
 
-      for (const vias of allViaSets){
-        // OSRM
-        const osrmRoutes = await fetchOSRM(profile, start, end, vias, chkAvoidFerries.checked);
-        for (const rt of osrmRoutes){
-          let coords = rt.coords;
-          coords = scrubMicroDetours(coords);
-          coords = simplifyAdaptive(coords, rt.distance);
+      // OSRM (car)
+      const osrmRoutes = await fetchOSRM(start, end, routeState.vias, chkAvoidFerries.checked);
+      for (const rt of osrmRoutes){
+        const coords = rt.coords; // exact
+        const key = hashCoords(coords);
+        if (overallSeen.has(key)) continue;
+        if (baselineDistance==null) baselineDistance = rt.distance;
+        if (rt.distance < 300) continue;
+        overallSeen.add(key);
+        addRouteToUI(coords, {provider:`OSRM`, distance:rt.distance, duration:rt.duration}, paletteIndex++);
+      }
+
+      // Google (car)
+      if (elUseGoogle.checked){
+        const gRoutes = await fetchGoogle(start, end, routeState.vias, avoids);
+        for (const rt of gRoutes){
+          const coords = rt.coords; // exact (step paths)
           const key = hashCoords(coords);
           if (overallSeen.has(key)) continue;
           if (baselineDistance==null) baselineDistance = rt.distance;
-          if (percentDiff(rt.distance, baselineDistance) < 0.02 && vias.length>0) continue;
           if (rt.distance < 300) continue;
           overallSeen.add(key);
-          addRouteToUI(coords, {provider:`OSRM ${vias.length?'('+vias.map(v=>v.label).join('+')+')':''}`, distance:rt.distance, duration:rt.duration}, paletteIndex++);
-        }
-
-        // Google
-        if (elUseGoogle.checked){
-          const gRoutes = await fetchGoogle(profile, start, end, vias, avoids);
-          for (const rt of gRoutes){
-            let coords = rt.coords;
-            coords = scrubMicroDetours(coords);
-            coords = simplifyAdaptive(coords, rt.distance);
-            const key = hashCoords(coords);
-            if (overallSeen.has(key)) continue;
-            if (baselineDistance==null) baselineDistance = rt.distance;
-            if (percentDiff(rt.distance, baselineDistance) < 0.02 && vias.length>0) continue;
-            if (rt.distance < 300) continue;
-            overallSeen.add(key);
-            addRouteToUI(coords, {provider:`Google ${vias.length?'('+vias.map(v=>v.label).join('+')+')':''}`, distance:rt.distance, duration:rt.duration}, paletteIndex++);
-          }
+          addRouteToUI(coords, {provider:`Google`, distance:rt.distance, duration:rt.duration}, paletteIndex++);
         }
       }
 
-      if(routeState.polylines.length===0) alert('No clean alternatives. Try adding a manual Via (Ctrl+Click) or increasing Detour.');
+      if(routeState.polylines.length===0) alert('No routes. Check points or try adding a manual Via (Ctrl+Click).');
       else setActiveRoute(0);
     }catch(err){
       console.error(err); alert('Routing failed. Check points and try again.');
@@ -696,7 +582,7 @@
 
   // Copy/Use/Zoom
   function getActiveRouteCoords(){ const idx=routeState.activeIdx; if(idx==null||idx<0) return null; const pl=routeState.polylines[idx]; if(!pl) return null; const latlngs=pl.getLatLngs(); return Array.isArray(latlngs[0])?latlngs.flat():latlngs; }
-  byId('btn-use-selected').addEventListener('click',()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const poly=L.polyline(pts,{color:'#007ACC',weight:3,opacity:0.95}).addTo(map); if(poly.pm&&poly.pm.enable) poly.pm.enable({snappable:true,snapDistance:20}); });
+  byId('btn-use-selected').addEventListener('click',()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const poly=L.polyline(pts,{color:'#007ACC',weight:3,opacity:0.98}).addTo(map); if(poly.pm&&poly.pm.enable) poly.pm.enable({snappable:true,snapDistance:20}); });
   byId('btn-copy-selected').addEventListener('click', async ()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const coords=pts.map(ll=>[ll.lng,ll.lat]); const text=JSON.stringify(coords); if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(text); else { const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.top='-9999px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); ta.remove(); } });
   byId('btn-zoom-all').addEventListener('click',()=>{
     const groups = routeState.polylines.filter(Boolean);
