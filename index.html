@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Google + Unified UK Search + Draw + Edit + Metrics + Street View + Routing</title>
+  <title>Leaflet + Google + Unified UK Search + Draw + Edit + Metrics + Street View + Routing (multi)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -45,11 +45,9 @@
     }
     #q { min-width: 320px; flex: 1 1 420px; }
     .toolbar .spacer { width: 6px; flex: 0 0 auto; }
-
-    /* Small inputs for routing */
     .mini { width: 220px; }
 
-    /* Pin info panel */
+    /* Pin info panel (bottom-right) */
     .info {
       position: absolute; z-index: 1000; right: 10px; bottom: 50px;
       background: #fff; border-radius: 10px; padding: 10px 12px;
@@ -60,7 +58,7 @@
     .info .row { margin: 4px 0; }
     .info code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
 
-    /* Polygon metrics panel */
+    /* Polygon metrics panel (bottom-left) */
     .metrics {
       position: absolute; z-index: 1000; left: 10px; bottom: 50px;
       background: #fff; border-radius: 10px; padding: 10px 12px;
@@ -75,18 +73,28 @@
     }
     .metrics .btn + .btn { margin-left: 6px; }
 
-    /* Route summary box */
+    /* Route summary: positioned next to metrics (bottom-left, to the right of it) */
     .routebox {
-      position: absolute; z-index: 1000; left: 10px; top: 64px;
+      position: absolute; z-index: 1000; left: 410px; bottom: 50px;   /* sits next to metrics */
       background: #fff; border-radius: 10px; padding: 10px 12px;
       box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif;
-      min-width: 240px; max-width: 360px;
+      min-width: 280px; max-width: 420px;
     }
     .routebox h4 { margin: 0 0 6px 0; font-size: 14px; }
     .routebox .row { margin: 4px 0; }
     .routebox code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
+    .route-item {
+      display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid #eee; border-radius:8px; margin:6px 0; cursor:pointer;
+    }
+    .route-swatch { width:14px; height:14px; border-radius:3px; border:1px solid #bbb; }
+    .route-item.active { border-color:#bbb; background:#fafafa; }
+    .routebox button {
+      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer;
+    }
 
-    @media (max-width: 640px) { #q { min-width: 260px; flex-basis: 300px; } }
+    @media (max-width: 900px) {
+      .routebox { left: 10px; bottom: 10px; max-width: 360px; }  /* stack on small screens */
+    }
 
     /* Lower the base layers control */
     .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 75px !important; }
@@ -99,7 +107,7 @@
       position: absolute; z-index: 1100; right: 10px; bottom: 10px;
       width: 420px; height: 300px; background: #fff; border-radius: 10px;
       box-shadow: 0 2px 12px rgba(0,0,0,.18); display: none; overflow: hidden;
-      border: 1px solid #ddd;
+      border: 1px solid #ddd; resize: both;
     }
     #sv-header {
       height: 36px; display:flex; align-items:center; justify-content:space-between;
@@ -111,7 +119,6 @@
       margin-left: 6px; padding: 4px 8px; border: 1px solid #ddd; background:#fff; border-radius: 6px; cursor: pointer;
     }
     #pano { width: 100%; height: calc(100% - 36px); }
-    #sv-panel { resize: both; }
   </style>
 </head>
 <body>
@@ -147,7 +154,7 @@
 
     <span class="spacer"></span>
 
-    <!-- NEW: Routing controls -->
+    <!-- Routing controls -->
     <input id="route-start" class="mini" type="text" placeholder="Start: address / 52.6,-2.7 / 349000,306000" />
     <input id="route-end"   class="mini" type="text" placeholder="End: address / 52.7,-2.8 / 340000,300000" />
     <select id="route-mode" title="Travel mode">
@@ -158,17 +165,22 @@
     <button id="btn-pin-start" title="Use current pin as Start">Pin→Start</button>
     <button id="btn-pin-end" title="Use current pin as End">Pin→End</button>
     <button id="btn-swap" title="Swap start/end">Swap</button>
-    <button id="btn-route" title="Calculate route">Route</button>
-    <button id="btn-clear-route" title="Clear route">Clear</button>
+    <button id="btn-route" title="Calculate route(s)">Route</button>
+    <button id="btn-clear-route" title="Clear routes">Clear</button>
   </div>
 
-  <!-- Route summary -->
+  <!-- Route summary (bottom-left, next to metrics) -->
   <div class="routebox" id="routebox">
-    <h4>ROUTE:</h4>
+    <h4>ROUTES:</h4>
     <div class="row">Mode: <code id="r-mode">—</code></div>
-    <div class="row">Distance: <code id="r-dist">—</code></div>
-    <div class="row">Duration: <code id="r-dur">—</code></div>
-    <div class="row" style="opacity:.8">Tips: Right-click sets Start (first), End (second). Drag start/end markers to tweak.</div>
+    <div id="r-list" class="row"></div>
+
+    <div class="row" style="margin-top:8px; display:flex; gap:6px;">
+      <button id="btn-use-selected" title="Add the selected route to drawings">Use Selected</button>
+      <button id="btn-copy-selected" title="Copy selected route coordinates">Copy Coords</button>
+    </div>
+
+    <div class="row" style="opacity:.8">Tip: click a route to highlight. Right-click map sets Start then End.</div>
   </div>
 
   <!-- Pin info panel -->
@@ -177,7 +189,7 @@
     <div class="row">Postcode: <code id="postcode">—</code></div>
     <div class="row">Lat/Lon: <code id="latlon">—</code></div>
     <div class="row">Easting/Northing: <code id="en">—</code></div>
-    <div class="row" style="opacity:.8">Tips: Shift+Click to drop a pin. Alt+Click to open Street View. Drawing clicks won’t move the map.</div>
+    <div class="row" style="opacity:.8">Tips: Shift+Click to drop a pin. Alt+Click for Street View.</div>
   </div>
 
   <!-- Polygon metrics panel -->
@@ -205,59 +217,53 @@
     <div id="pano"></div>
   </div>
 </div>
-  
-<script id="gmaps-loader">
-  (function () {
-    const STORAGE = 'gmapsApiKey';
-    const paramKey = new URL(location.href).searchParams.get('gmaps');
-    if (paramKey) localStorage.setItem(STORAGE, paramKey);
-    const savedKey = localStorage.getItem(STORAGE);
-  
-    function inject(k) {
-      if (!k) return;
-      const s = document.createElement('script');
-      s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(k) + '&v=weekly&loading=async';
-      s.async = true; s.defer = true;
-      document.head.appendChild(s);
-    }
-  
-    if (savedKey) {
-      inject(savedKey);
-      return;
-    }
-  
-    // Minimal inline UI to capture key on first run
-    const ui = document.createElement('div');
-    ui.style.cssText = 'position:fixed;z-index:2000;left:50%;top:12px;transform:translateX(-50%);background:#fff;padding:10px 12px;border:1px solid #ddd;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:13px system-ui';
-    ui.innerHTML = `
-      <b>Google Maps API key needed</b>
-      <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
-        <input id="gmaps-key-input" type="password" placeholder="Paste key…" style="width:280px;padding:6px 8px;border:1px solid #ccc;border-radius:8px;">
-        <button id="gmaps-key-save" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#f7f7f7;cursor:pointer;">Save</button>
-        <button id="gmaps-key-cancel" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;">Dismiss</button>
-      </div>
-      <div style="margin-top:6px;opacity:.75">
-        Tip: you can also open with <code>?gmaps=YOUR_KEY</code>. The key is stored in <code>localStorage</code> on this browser only.
-      </div>
-    `;
-    document.addEventListener('DOMContentLoaded', () => {
-      document.body.appendChild(ui);
-      document.getElementById('gmaps-key-save')?.addEventListener('click', () => {
-        const val = document.getElementById('gmaps-key-input').value.trim();
-        if (!val) return alert('Paste your Google Maps JavaScript API key.');
-        localStorage.setItem(STORAGE, val);
-        ui.remove();
-        inject(val);
-      });
-      document.getElementById('gmaps-key-cancel')?.addEventListener('click', () => ui.remove());
-    });
-  
-    // Helper for you: clear saved key via console when needed
-    window.__clearGMapsKey = () => { localStorage.removeItem(STORAGE); location.reload(); };
-  })();
-</script>
 
-  
+<!-- ====== Option B: runtime Google Maps key loader (no key in repo) ====== -->
+<script id="gmaps-loader">
+(function () {
+  const STORAGE = 'gmapsApiKey';
+  const paramKey = new URL(location.href).searchParams.get('gmaps');
+  if (paramKey) localStorage.setItem(STORAGE, paramKey);
+  const savedKey = localStorage.getItem(STORAGE);
+
+  function inject(k) {
+    if (!k) return;
+    const s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(k) + '&v=weekly&loading=async';
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
+  }
+
+  if (savedKey) { inject(savedKey); return; }
+
+  const ui = document.createElement('div');
+  ui.style.cssText = 'position:fixed;z-index:2000;left:50%;top:12px;transform:translateX(-50%);background:#fff;padding:10px 12px;border:1px solid #ddd;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:13px system-ui';
+  ui.innerHTML = `
+    <b>Google Maps API key needed</b>
+    <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
+      <input id="gmaps-key-input" type="password" placeholder="Paste key…" style="width:280px;padding:6px 8px;border:1px solid #ccc;border-radius:8px;">
+      <button id="gmaps-key-save" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#f7f7f7;cursor:pointer;">Save</button>
+      <button id="gmaps-key-cancel" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;">Dismiss</button>
+    </div>
+    <div style="margin-top:6px;opacity:.75">Tip: you can also use <code>?gmaps=YOUR_KEY</code>. Stored only in this browser.</div>
+  `;
+  document.addEventListener('DOMContentLoaded', () => {
+    document.body.appendChild(ui);
+    document.getElementById('gmaps-key-save')?.addEventListener('click', () => {
+      const val = document.getElementById('gmaps-key-input').value.trim();
+      if (!val) return alert('Paste your Google Maps JavaScript API key.');
+      localStorage.setItem(STORAGE, val);
+      ui.remove();
+      inject(val);
+    });
+    document.getElementById('gmaps-key-cancel')?.addEventListener('click', () => ui.remove());
+  });
+
+  window.__clearGMapsKey = () => { localStorage.removeItem(STORAGE); location.reload(); };
+})();
+</script>
+<!-- =============================================================== -->
+
 <script type="module">
   // ---------- Config ----------
   const centre = [52.677027, -2.773167]; // 29 Green Lane, SY3 0NS
@@ -282,7 +288,6 @@
     { maxZoom: 20, attribution: "© OpenStreetMap contributors" }
   );
 
-  // Map init with fallback
   const map = L.map("map", {
     center: centre,
     zoom: 19,
@@ -290,7 +295,6 @@
     fullscreenControl: true
   });
 
-  // Prevent UI clicks from bubbling into the map
   function blockEventsFor(selector) {
     document.querySelectorAll(selector).forEach(el => {
       L.DomEvent.disableClickPropagation(el);
@@ -303,27 +307,22 @@
   // Initial pin
   let pin = L.marker(centre).addTo(map).bindPopup("SY3 0NS").openPopup();
 
-  // Elements for info panel
+  // Info elements
   const elPostcode = byId('postcode');
   const elLatLon = byId('latlon');
   const elEN = byId('en');
 
-  // UK postcode normaliser/checker
   function normalizeUKPostcode(str) {
     if (!str) return null;
     const s = str.toUpperCase().replace(/\s+/g, '');
     return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s) ? s : null;
   }
 
-  // Update only coords + authoritative postcode (no Nominatim)
   async function updateInfo(lat, lon) {
     const latStr = lat.toFixed(6), lonStr = lon.toFixed(6);
     elLatLon.textContent = `${latStr}, ${lonStr}`;
-
     const [E, N] = proj4(WGS84, OSGB, [lon, lat]);
     elEN.textContent = `${Math.round(E)}, ${Math.round(N)}`;
-
-    // Authoritative postcode near this lat/lon
     let pc = '—';
     try {
       const pr = await fetch(`https://api.postcodes.io/postcodes?lon=${lonStr}&lat=${latStr}&limit=1`);
@@ -338,17 +337,14 @@
     if (!isNum(lat) || !isNum(lon)) return;
     pin.setLatLng([lat, lon]);
     pin.addTo(map).openPopup();
-    if (recenter) {
-      map.setView([lat, lon], Math.max(map.getZoom(), 18));
-    }
+    if (recenter) map.setView([lat, lon], Math.max(map.getZoom(), 18));
     updateInfo(lat, lon);
   }
 
-  // Guard: ignore clicks that originate from UI/controls
   function clickCameFromUI(evt) {
     const t = evt.originalEvent?.target;
     return !!(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel, #routebox'));
-  }
+    }
 
   // ---------- Google base (async ready) ----------
   async function ensureGoogle() {
@@ -365,8 +361,7 @@
     const gRoad   = L.gridLayer.googleMutant({ type: "roadmap",   maxZoom: 21 });
     const gHybrid = L.gridLayer.googleMutant({ type: "hybrid",    maxZoom: 21 });
     const gSat    = L.gridLayer.googleMutant({ type: "satellite", maxZoom: 21 });
-
-    map.addLayer(gHybrid); // default to Hybrid
+    map.addLayer(gHybrid);
 
     const baseMaps = {
       "Google Roadmap": gRoad,
@@ -421,7 +416,6 @@
       setPin(lat, lon, true); return;
     }
 
-    // Postcode / Address mode
     try {
       const norm = normalizeUKPostcode(raw);
       if (norm) {
@@ -435,7 +429,6 @@
           alert('Postcode not found in postcodes.io; falling back to address search.');
         }
       }
-      // Fallback: Nominatim for coordinates only
       const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
       const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const j = await r.json();
@@ -450,25 +443,13 @@
     } catch { alert('Search failed (network or rate limit).'); }
   }
 
-  // --- Keep map still while drawing (polygon-only dblclick handling) ---
+  // --- Drawing UX tweaks ---
   let isDrawing = false;
+  map.on('pm:drawstart', (e) => { isDrawing = true; if (e.shape === 'Polygon') map.doubleClickZoom.disable(); });
+  map.on('pm:drawend',   () => { isDrawing = false; map.doubleClickZoom.enable(); });
+  map.on('pm:create',    () => { isDrawing = false; map.doubleClickZoom.enable(); });
 
-  map.on('pm:drawstart', (e) => {
-    isDrawing = true;
-    if (e.shape === 'Polygon') {
-      map.doubleClickZoom.disable();  // double-click closes polygon
-    }
-  });
-  map.on('pm:drawend', () => {
-    isDrawing = false;
-    map.doubleClickZoom.enable();
-  });
-  map.on('pm:create', () => {
-    isDrawing = false;
-    map.doubleClickZoom.enable();
-  });
-
-  // Pin-placement (Shift+Click only)
+  // Pin via Shift+Click
   map.on('click', e => {
     if (clickCameFromUI(e)) return;
     if (isDrawing) return;
@@ -479,7 +460,7 @@
     setPin(e.latlng.lat, e.latlng.lng, false);
   });
 
-  // ---------- Geoman drawing & EDITING + Metrics ----------
+  // ---------- Geoman drawing & metrics ----------
   const defaultStyle = { color: "#00AEEF", weight: 2, fillOpacity: 0.18 };
   const activeStyle  = { color: "#007ACC", weight: 2, fillOpacity: 0.20 };
 
@@ -505,34 +486,26 @@
     removalMode: true
   });
 
-  let selectedLayer = null;   // last thing clicked (if shape)
-  let lastShapeLayer = null;  // last POLYGON/CIRCLE
+  let selectedLayer = null;
+  let lastShapeLayer = null;
 
   const mType  = byId('m-type');
   const mArea  = byId('m-area');
   const mPerim = byId('m-perim');
   const mLongest = byId('m-longest');
 
-  function isPolygonish(layer) {
-    return (layer instanceof L.Polygon) || (layer instanceof L.Circle);
-  }
+  const isPolygonish = layer => (layer instanceof L.Polygon) || (layer instanceof L.Circle);
 
   function updateMetrics(layer) {
     if (!layer || !isPolygonish(layer)) {
-      mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—';
-      if (mLongest) mLongest.textContent = '—';
-      return;
+      mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; if (mLongest) mLongest.textContent='—'; return;
     }
-
     if (layer instanceof L.Circle) {
       const r = layer.getRadius();
-      const area = Math.PI * r * r;
-      const peri = 2 * Math.PI * r;
+      const area = Math.PI * r * r, peri = 2 * Math.PI * r;
       mType.textContent = 'Circle';
       mArea.textContent = `${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`;
-      mPerim.textContent = `${peri.toFixed(2)} m`;
-      if (mLongest) mLongest.textContent = '—';
-      return;
+      mPerim.textContent = `${peri.toFixed(2)} m`; if (mLongest) mLongest.textContent='—'; return;
     }
     try {
       const gj = layer.toGeoJSON();
@@ -544,56 +517,32 @@
         const lengthKm = turf.length(outline, { units: 'kilometers' });
         const peri = lengthKm * 1000;
         mArea.textContent = `${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`;
-        mPerim.textContent = `${peri.toFixed(2)} m`;
-
-        // Longest edge
-        if (mLongest) {
-          const longest = longestEdgeMetersFromGeom(gj.geometry);
-          mLongest.textContent = `${longest.toFixed(2)} m`;
-        }
+        mPerim.textContent = `${peri.toFixed(2)} m";
+        if (mLongest) mLongest.textContent = `${longestEdgeMetersFromGeom(gj.geometry).toFixed(2)} m`;
       } else {
-        mArea.textContent = `—`; mPerim.textContent = `—`;
-        if (mLongest) mLongest.textContent = '—';
+        mArea.textContent = mPerim.textContent = '—'; if (mLongest) mLongest.textContent='—';
       }
-    } catch {
-      mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—';
-      if (mLongest) mLongest.textContent='—';
-    }
+    } catch { mType.textContent=mArea.textContent=mPerim.textContent='—'; if (mLongest) mLongest.textContent='—'; }
   }
 
   function setSelected(layer) {
-    if (selectedLayer && selectedLayer.setStyle && isPolygonish(selectedLayer)) {
-      selectedLayer.setStyle(defaultStyle);
-    }
+    if (selectedLayer && selectedLayer.setStyle && isPolygonish(selectedLayer)) selectedLayer.setStyle(defaultStyle);
     selectedLayer = layer;
-    if (selectedLayer && selectedLayer.setStyle && isPolygonish(selectedLayer)) {
-      selectedLayer.setStyle(activeStyle);
-    }
-    if (isPolygonish(layer)) {
-      lastShapeLayer = layer;
-      updateMetrics(layer);
-    } else {
-      updateMetrics(null);
-    }
+    if (selectedLayer && selectedLayer.setStyle && isPolygonish(selectedLayer)) selectedLayer.setStyle(activeStyle);
+    if (isPolygonish(layer)) { lastShapeLayer = layer; updateMetrics(layer); } else { updateMetrics(null); }
   }
 
   function bindEditableHandlers(layer, isImported = false) {
     if (layer.setStyle && !isImported && isPolygonish(layer)) layer.setStyle(defaultStyle);
-
     if (isPolygonish(layer)) {
       layer.on('click', () => {
         setSelected(layer);
-        if (layer.pm) {
-          if (layer.pm.enabled()) layer.pm.disable();
-          else layer.pm.enable({ allowSelfIntersection: false, snappable: true, snapDistance: 20 });
-        }
+        if (layer.pm) { if (layer.pm.enabled()) layer.pm.disable(); else layer.pm.enable({ allowSelfIntersection:false, snappable:true, snapDistance:20 }); }
       });
-
       layer.on('pm:edit',   () => updateMetrics(layer));
       layer.on('pm:dragend',() => updateMetrics(layer));
       layer.on('pm:enable', () => { if (layer.setStyle) layer.setStyle(activeStyle); });
       layer.on('pm:disable',() => { if (layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); });
-
       updateMetrics(layer);
     }
   }
@@ -602,13 +551,11 @@
     const layer = e.layer;
     if (layer.setStyle && isPolygonish(layer)) layer.setStyle(defaultStyle);
     if (layer.pm && layer.pm.enable && isPolygonish(layer)) {
-      layer.pm.enable({ allowSelfIntersection: false, snappable: true, snapDistance: 20 });
+      layer.pm.enable({ allowSelfIntersection:false, snappable:true, snapDistance:20 });
     }
     bindEditableHandlers(layer);
     if (isPolygonish(layer)) setSelected(layer);
-    console.log("Created feature:", layer.toGeoJSON());
   });
-
   map.eachLayer(l => { if (l.pm) bindEditableHandlers(l); });
 
   byId('btn-edit-all').onclick = () => { map.pm.toggleGlobalEditMode(); };
@@ -620,194 +567,101 @@
     if (lastShapeLayer) updateMetrics(lastShapeLayer);
   };
 
-  // ---------- Copy coords & Center buttons ----------
   const btnCopy = byId('btn-copy');
   const btnCenterShape = byId('btn-center-shape');
 
   btnCopy.addEventListener('click', async () => {
-    if (!lastShapeLayer) { alert('Draw or select a polygon/circle first.'); return; }
-    try {
-      const text = buildCoordsText(lastShapeLayer);
-      await copyText(text);
-      flashBtn(btnCopy, 'Copied!');
-    } catch (err) {
-      console.error(err);
-      alert('Failed to copy.');
-    }
+    if (!lastShapeLayer) return alert('Draw or select a polygon/circle first.');
+    try { await copyText(buildCoordsText(lastShapeLayer)); flashBtn(btnCopy, 'Copied!'); }
+    catch { alert('Failed to copy.'); }
   });
 
   btnCenterShape.addEventListener('click', () => {
     if (lastShapeLayer && isPolygonish(lastShapeLayer)) {
-      if (lastShapeLayer instanceof L.Circle) {
-        const c = lastShapeLayer.getLatLng();
-        map.flyTo(c, Math.max(map.getZoom(), 18));
-      } else {
-        const b = lastShapeLayer.getBounds();
-        map.fitBounds(b, { maxZoom: Math.max(map.getZoom(), 19) });
-      }
-    } else if (pin) {
-      map.flyTo(pin.getLatLng(), Math.max(map.getZoom(), 18));
-    }
+      if (lastShapeLayer instanceof L.Circle) map.flyTo(lastShapeLayer.getLatLng(), Math.max(map.getZoom(), 18));
+      else map.fitBounds(lastShapeLayer.getBounds(), { maxZoom: Math.max(map.getZoom(), 19) });
+    } else if (pin) map.flyTo(pin.getLatLng(), Math.max(map.getZoom(), 18));
   });
 
   function buildCoordsText(layer) {
     if (layer instanceof L.Circle) {
-      const c = layer.getLatLng();
-      const rMeters = layer.getRadius();
+      const c = layer.getLatLng(), rMeters = layer.getRadius();
       const poly = turf.circle([c.lng, c.lat], rMeters / 1000, { steps: 64, units: 'kilometers' });
       return JSON.stringify(poly.geometry.coordinates);
     }
-    const gj = layer.toGeoJSON();
-    const geom = gj && gj.geometry ? gj.geometry : null;
+    const gj = layer.toGeoJSON(), geom = gj?.geometry;
     if (!geom) throw new Error('No geometry found.');
-    if (!(geom.type === 'Polygon' || geom.type === 'MultiPolygon')) {
-      throw new Error('Only polygons/circles are exported here.');
-    }
+    if (!(geom.type === 'Polygon' || geom.type === 'MultiPolygon')) throw new Error('Only polygons/circles are exported.');
     return JSON.stringify(geom.coordinates);
   }
-
   async function copyText(text) {
     if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-9999px';
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.top='-9999px';
     document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
   }
-
-  function flashBtn(btn, msg) {
-    const orig = btn.textContent;
-    btn.textContent = msg; btn.disabled = true;
-    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200);
-  }
+  function flashBtn(btn, msg) { const orig = btn.textContent; btn.textContent = msg; btn.disabled = true; setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200); }
 
   function longestEdgeMetersFromGeom(geom) {
     let longest = 0;
     const processRing = (ring) => {
       const n = ring.length;
-      if (n < 2) return;
       for (let i = 0; i < n; i++) {
-        const a = ring[i];
-        const b = ring[(i + 1) % n];
-        const km = turf.distance(a, b, { units: 'kilometers' });
-        const m = km * 1000;
+        const a = ring[i], b = ring[(i + 1) % n];
+        const km = turf.distance(a, b, { units: 'kilometers' }), m = km * 1000;
         if (m > longest) longest = m;
       }
     };
-    if (geom.type === 'Polygon') {
-      geom.coordinates.forEach(processRing);
-    } else if (geom.type === 'MultiPolygon') {
-      geom.coordinates.forEach(poly => poly.forEach(processRing));
-    }
+    if (geom.type === 'Polygon') geom.coordinates.forEach(processRing);
+    else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(poly => poly.forEach(processRing));
     return longest;
   }
 
-  // ---------- Street View integration ----------
-  let svService = null;
-  let panorama = null;
-  const svPanel = byId('sv-panel');
-  const svTitle = byId('sv-title');
-  const svBtnClose = byId('sv-close');
-  const svBtnPop = byId('sv-popout');
-  const btnSVHere = byId('btn-sv-center');
-  const btnSVPin  = byId('btn-sv-pin');
+  // ---------- Street View ----------
+  let svService = null, panorama = null;
+  const svPanel = byId('sv-panel'), svTitle = byId('sv-title'), svBtnClose = byId('sv-close'), svBtnPop = byId('sv-popout');
+  const btnSVHere = byId('btn-sv-center'), btnSVPin = byId('btn-sv-pin');
 
-  function showSVPanel(show) {
-    svPanel.style.display = show ? 'block' : 'none';
-  }
-
+  function showSVPanel(show) { svPanel.style.display = show ? 'block' : 'none'; }
   function ensureSV() {
     if (!window.google || !google.maps) return false;
     if (!svService) svService = new google.maps.StreetViewService();
-    if (!panorama) {
-      panorama = new google.maps.StreetViewPanorama(byId('pano'), {
-        addressControl: true,
-        linksControl: true,
-        panControl: true,
-        zoomControl: true,
-        fullscreenControl: true
-      });
-    }
+    if (!panorama) panorama = new google.maps.StreetViewPanorama(byId('pano'), { addressControl:true, linksControl:true, panControl:true, zoomControl:true, fullscreenControl:true });
     return true;
   }
-
   function openSVAt(lat, lon) {
     if (!ensureSV()) return alert('Google Maps API not ready');
     const loc = { lat, lng: lon };
     svService.getPanorama({ location: loc, radius: 70 }, (data, status) => {
-      if (status === 'OK' && data && data.location) {
+      if (status === 'OK' && data?.location) {
         panorama.setPano(data.location.pano);
         panorama.setPov({ heading: 0, pitch: 0 });
         panorama.setVisible(true);
         svTitle.textContent = 'Street View';
-        svBtnPop.onclick = () => {
-          const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`;
-          window.open(url, '_blank', 'noopener');
-        };
+        svBtnPop.onclick = () => window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`,'_blank','noopener');
         showSVPanel(true);
-      } else {
-        alert('No Street View available at this location.');
-      }
+      } else alert('No Street View here.');
     });
   }
-
-  btnSVHere.addEventListener('click', () => {
-    const c = map.getCenter();
-    openSVAt(c.lat, c.lng);
-  });
-
-  btnSVPin.addEventListener('click', () => {
-    const ll = pin.getLatLng();
-    openSVAt(ll.lat, ll.lng);
-  });
-
-  map.on('click', (e) => {
-    if (clickCameFromUI(e)) return;
-    if (e.originalEvent && e.originalEvent.altKey) {
-      openSVAt(e.latlng.lat, e.latlng.lng);
-    }
-  });
-
-  map.on('contextmenu', (e) => {
-    // Right-click quick routing: set start if empty, else set end
-    if (!routeState.start) {
-      setRoutePoint('start', e.latlng.lat, e.latlng.lng, 'Right-click Start');
-    } else {
-      setRoutePoint('end', e.latlng.lat, e.latlng.lng, 'Right-click End');
-    }
-  });
-
+  btnSVHere.addEventListener('click', () => { const c = map.getCenter(); openSVAt(c.lat, c.lng); });
+  btnSVPin.addEventListener('click', () => { const ll = pin.getLatLng(); openSVAt(ll.lat, ll.lng); });
+  map.on('click', (e) => { if (!clickCameFromUI(e) && e.originalEvent?.altKey) openSVAt(e.latlng.lat, e.latlng.lng); });
+  map.on('contextmenu', (e) => { if (!routeState.start) setRoutePoint('start', e.latlng.lat, e.latlng.lng, 'Start'); else setRoutePoint('end', e.latlng.lat, e.latlng.lng, 'End'); });
   svBtnClose.addEventListener('click', () => showSVPanel(false));
 
-  // ---------- Routing (OSRM demo server) ----------
+  // ---------- Routing with alternatives ----------
   const routeLayer = L.layerGroup().addTo(map);
   let startMarker = null, endMarker = null;
 
-  const elRS = byId('route-start');
-  const elRE = byId('route-end');
-  const elRM = byId('route-mode');
-  const btnPinStart = byId('btn-pin-start');
-  const btnPinEnd   = byId('btn-pin-end');
-  const btnSwap     = byId('btn-swap');
-  const btnRoute    = byId('btn-route');
-  const btnClearRt  = byId('btn-clear-route');
+  const elRS = byId('route-start'), elRE = byId('route-end'), elRM = byId('route-mode');
+  const btnPinStart = byId('btn-pin-start'), btnPinEnd = byId('btn-pin-end'), btnSwap = byId('btn-swap'), btnRoute = byId('btn-route'), btnClearRt = byId('btn-clear-route');
+  const rMode = byId('r-mode'), rList = byId('r-list');
+  const btnUseSelected  = document.getElementById('btn-use-selected');
+  const btnCopySelected = document.getElementById('btn-copy-selected');
 
-  const rMode = byId('r-mode');
-  const rDist = byId('r-dist');
-  const rDur  = byId('r-dur');
+  const routeState = { start: null, end: null, polylines: [], labels: [], activeIdx: -1 };
+  const ROUTE_COLORS = ['#e53935', '#43a047', '#1e88e5', '#8e24aa', '#fb8c00'];
 
-  const routeState = { start: null, end: null }; // {lat, lon, label}
-
-  function updateRouteSummary(mode = '—', distM = null, durS = null) {
-    rMode.textContent = mode;
-    rDist.textContent = distM != null ? `${(distM/1000).toFixed(2)} km` : '—';
-    if (durS != null) {
-      const mins = Math.round(durS/60);
-      const hrs = Math.floor(mins/60);
-      const rem = mins % 60;
-      rDur.textContent = hrs ? `${hrs}h ${rem}m` : `${mins} min`;
-    } else {
-      rDur.textContent = '—';
-    }
-  }
+  function updateModeLabel() { rMode.textContent = elRM.value || '—'; }
 
   function setRoutePoint(which, lat, lon, label = '') {
     const obj = { lat, lon, label };
@@ -838,122 +692,166 @@
     }
   }
 
-  btnPinStart.addEventListener('click', () => {
-    const p = pin.getLatLng();
-    setRoutePoint('start', p.lat, p.lng, 'Pin');
-  });
-  btnPinEnd.addEventListener('click', () => {
-    const p = pin.getLatLng();
-    setRoutePoint('end', p.lat, p.lng, 'Pin');
-  });
-
-  btnSwap.addEventListener('click', () => {
+  btnPinStart.addEventListener('click', () => { const p = pin.getLatLng(); setRoutePoint('start', p.lat, p.lng, 'Pin'); });
+  btnPinEnd  .addEventListener('click', () => { const p = pin.getLatLng(); setRoutePoint('end',   p.lat, p.lng, 'Pin'); });
+  btnSwap    .addEventListener('click', () => {
     const a = routeState.start, b = routeState.end;
     routeState.start = b; routeState.end = a;
     const tmp = elRS.value; elRS.value = elRE.value; elRE.value = tmp;
     if (startMarker && b) startMarker.setLatLng([b.lat, b.lon]);
-    if (endMarker && a)   endMarker.setLatLng([a.lat, a.lon]);
+    if (endMarker   && a) endMarker.setLatLng([a.lat, a.lon]);
   });
+  btnClearRt .addEventListener('click', clearRoutes);
+  btnRoute   .addEventListener('click', planRoutes);
+  elRM.addEventListener('change', updateModeLabel);
+  updateModeLabel();
 
-  btnClearRt.addEventListener('click', clearRoute);
-  function clearRoute() {
-    routeLayer.clearLayers();
-    startMarker = endMarker = null;
-    routeState.start = routeState.end = null;
-    elRS.value = ''; elRE.value = '';
-    updateRouteSummary('—', null, null);
+  function clearRoutes() {
+    routeState.polylines.forEach(pl => routeLayer.removeLayer(pl));
+    routeState.labels.forEach(lb => routeLayer.removeLayer(lb));
+    routeState.polylines = []; routeState.labels = []; routeState.activeIdx = -1;
+    rList.innerHTML = '';
   }
 
-  btnRoute.addEventListener('click', planRoute);
-
-  // Smart parser: lat,lon | E,N | postcode | address
   async function resolvePoint(text) {
     const raw = (text || '').trim();
     if (!raw) return null;
-
-    // Try lat,lon
     const parts = raw.replace(/[()]/g,'').split(/[,\s]+/).filter(Boolean);
     if (parts.length === 2 && !isNaN(+parts[0]) && !isNaN(+parts[1])) {
       const a = parseFloat(parts[0]), b = parseFloat(parts[1]);
-      // Heuristic: if both > 1000, treat as E/N
-      if (Math.abs(a) > 1000 && Math.abs(b) > 1000) {
-        const [lon, lat] = proj4(OSGB, WGS84, [a, b]);
-        return { lat, lon, label: 'E/N' };
-      }
-      // else assume lat,lon in degrees
-      if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
-        return { lat: a, lon: b, label: 'Lat/Lon' };
-      }
+      if (Math.abs(a) > 1000 && Math.abs(b) > 1000) { const [lon, lat] = proj4(OSGB, WGS84, [a, b]); return { lat, lon, label: 'E/N' }; }
+      if (Math.abs(a) <= 90 && Math.abs(b) <= 180) { return { lat: a, lon: b, label: 'Lat/Lon' }; }
     }
-
-    // Postcode
     const maybePC = normalizeUKPostcode(raw);
     if (maybePC) {
-      try {
-        const r = await fetch(`https://api.postcodes.io/postcodes/${maybePC}`);
-        const j = await r.json();
-        if (j?.status === 200 && j.result) {
-          return { lat: j.result.latitude, lon: j.result.longitude, label: j.result.postcode };
-        }
+      try { const r = await fetch(`https://api.postcodes.io/postcodes/${maybePC}`); const j = await r.json();
+        if (j?.status === 200 && j.result) return { lat: j.result.latitude, lon: j.result.longitude, label: j.result.postcode };
       } catch {}
     }
-
-    // Fallback: Nominatim (UK-biased)
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
       const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const j = await r.json();
-      if (j && j.length) {
-        return { lat: +j[0].lat, lon: +j[0].lon, label: j[0].display_name?.split(',')[0] || 'Address' };
-      }
+      if (j && j.length) return { lat: +j[0].lat, lon: +j[0].lon, label: j[0].display_name?.split(',')[0] || 'Address' };
     } catch {}
     return null;
   }
 
-  async function planRoute() {
+  function midpointLatLng(latlngs) {
+    const idx = Math.floor(latlngs.length / 2);
+    return latlngs[idx];
+  }
+
+  function makeNumberBadge(n, color, atLatLng) {
+    const icon = L.divIcon({
+      className: 'route-badge',
+      html: `<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`,
+      iconSize: [22,22],
+      iconAnchor: [11,11]
+    });
+    return L.marker(atLatLng, { icon });
+  }
+
+  function setActiveRoute(idx) {
+    routeState.activeIdx = idx;
+    routeState.polylines.forEach((pl, i) => {
+      pl.setStyle({ weight: i === idx ? 6 : 4, opacity: i === idx ? 0.95 : 0.6, dashArray: i === idx ? null : '6,6' });
+    });
+    Array.from(rList.children).forEach((el, i) => {
+      if (el.classList.contains('route-item')) el.classList.toggle('active', i === idx);
+    });
+    if (idx >= 0 && routeState.polylines[idx]) map.fitBounds(routeState.polylines[idx].getBounds(), { padding: [30,30] });
+  }
+
+  async function planRoutes() {
     try {
-      // Resolve start
       if (!routeState.start) {
         const s = await resolvePoint(elRS.value);
         if (!s) return alert('Set a valid Start (address/postcode/lat,lon/E,N).');
         setRoutePoint('start', s.lat, s.lon, s.label);
       }
-      // Resolve end
       if (!routeState.end) {
         const e = await resolvePoint(elRE.value);
         if (!e) return alert('Set a valid End (address/postcode/lat,lon/E,N).');
         setRoutePoint('end', e.lat, e.lon, e.label);
       }
+      const { start, end } = routeState; if (!start || !end) return;
 
-      const { start, end } = routeState;
-      if (!start || !end) return;
-
-      const profile = elRM.value; // driving | walking | cycling
-      const url = `https://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson&alternatives=false&steps=false`;
-
+      const profile = elRM.value;
+      const url = `https://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson&alternatives=true&steps=false`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Routing failed (${resp.status})`);
       const data = await resp.json();
-      if (!data || !data.routes || !data.routes.length) throw new Error('No route returned.');
+      const routes = data?.routes || [];
+      if (!routes.length) throw new Error('No route returned.');
 
-      // Clear previous line, keep markers
-      routeLayer.eachLayer(l => {
-        if (!(l === startMarker || l === endMarker)) routeLayer.removeLayer(l);
+      clearRoutes();
+      updateModeLabel();
+
+      routes.slice(0, 5).forEach((rt, i) => {
+        const color = ['#e53935', '#43a047', '#1e88e5', '#8e24aa', '#fb8c00'][i % 5];
+        const coords = rt.geometry.coordinates.map(([lon,lat]) => [lat,lon]);
+        const poly = L.polyline(coords, { weight: 4, opacity: 0.6, color }).addTo(routeLayer);
+        routeState.polylines.push(poly);
+        const mid = midpointLatLng(coords);
+        const badge = makeNumberBadge(i+1, color, mid).addTo(routeLayer);
+        routeState.labels.push(badge);
+
+        const km = (rt.distance/1000).toFixed(2);
+        const mins = Math.round(rt.duration/60);
+        const hrs = Math.floor(mins/60), rem = mins % 60;
+        const durTxt = hrs ? `${hrs}h ${rem}m` : `${mins} min`;
+
+        const item = document.createElement('div');
+        item.className = 'route-item';
+        item.innerHTML = `<div class="route-swatch" style="background:${color}"></div><div><b>${i+1}.</b> ${km} km • ${durTxt}</div>`;
+        item.onclick = () => setActiveRoute(i);
+        rList.appendChild(item);
       });
 
-      const route = data.routes[0];
-      const coords = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-      const line = L.polyline(coords, { weight: 5, opacity: 0.85 }).addTo(routeLayer);
-      map.fitBounds(line.getBounds(), { padding: [30,30] });
+      setActiveRoute(0);
 
-      updateRouteSummary(profile, route.distance, route.duration);
     } catch (err) {
       console.error(err);
-      alert('Could not compute route (network/limits/unreachable). Try another mode or simplify the points.');
+      alert('Could not compute routes (network/limits/unreachable). Try another mode/points.');
     }
   }
 
-  // ---------- Initial pin info ----------
+  // ---- Use/Copy Selected Route ----
+  function getActiveRouteCoords() {
+    const idx = routeState.activeIdx;
+    if (idx == null || idx < 0) return null;
+    const pl = routeState.polylines[idx];
+    if (!pl) return null;
+    const latlngs = pl.getLatLngs();
+    return Array.isArray(latlngs[0]) ? latlngs.flat() : latlngs;
+  }
+
+  btnUseSelected.addEventListener('click', () => {
+    const pts = getActiveRouteCoords();
+    if (!pts || !pts.length) return alert('Select a route first.');
+    const poly = L.polyline(pts, { color: '#007ACC', weight: 3, opacity: 0.95 }).addTo(map);
+    if (poly.pm && poly.pm.enable) poly.pm.enable({ snappable: true, snapDistance: 20 });
+    try { flashBtn(btnUseSelected, 'Added'); } catch {}
+  });
+
+  btnCopySelected.addEventListener('click', async () => {
+    const pts = getActiveRouteCoords();
+    if (!pts || !pts.length) return alert('Select a route first.');
+    const coords = pts.map(ll => [ll.lng, ll.lat]);
+    const text = JSON.stringify(coords);
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position='fixed'; ta.style.top='-9999px';
+        document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      }
+      try { flashBtn(btnCopySelected, 'Copied!'); } catch {}
+    } catch { alert('Failed to copy.'); }
+  });
+
+  // ---------- Init ----------
   (async () => { await updateInfo(centre[0], centre[1]); })();
 </script>
 
