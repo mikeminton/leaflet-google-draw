@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Google + Unified UK Search + Draw + Edit + Metrics + Street View</title>
+  <title>Leaflet + Google + Unified UK Search + Draw + Edit + Metrics + Street View + Routing</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -46,6 +46,9 @@
     #q { min-width: 320px; flex: 1 1 420px; }
     .toolbar .spacer { width: 6px; flex: 0 0 auto; }
 
+    /* Small inputs for routing */
+    .mini { width: 220px; }
+
     /* Pin info panel */
     .info {
       position: absolute; z-index: 1000; right: 10px; bottom: 50px;
@@ -72,6 +75,17 @@
     }
     .metrics .btn + .btn { margin-left: 6px; }
 
+    /* Route summary box */
+    .routebox {
+      position: absolute; z-index: 1000; left: 10px; top: 64px;
+      background: #fff; border-radius: 10px; padding: 10px 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif;
+      min-width: 240px; max-width: 360px;
+    }
+    .routebox h4 { margin: 0 0 6px 0; font-size: 14px; }
+    .routebox .row { margin: 4px 0; }
+    .routebox code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
+
     @media (max-width: 640px) { #q { min-width: 260px; flex-basis: 300px; } }
 
     /* Lower the base layers control */
@@ -97,7 +111,6 @@
       margin-left: 6px; padding: 4px 8px; border: 1px solid #ddd; background:#fff; border-radius: 6px; cursor: pointer;
     }
     #pano { width: 100%; height: calc(100% - 36px); }
-    /* Allow resize */
     #sv-panel { resize: both; }
   </style>
 </head>
@@ -128,9 +141,34 @@
 
     <span class="spacer"></span>
 
-    <!-- NEW: Street View openers -->
+    <!-- Street View openers -->
     <button id="btn-sv-center" title="Open Street View at map centre">Street View here</button>
     <button id="btn-sv-pin" title="Open Street View at last pin">Street View at Pin</button>
+
+    <span class="spacer"></span>
+
+    <!-- NEW: Routing controls -->
+    <input id="route-start" class="mini" type="text" placeholder="Start: address / 52.6,-2.7 / 349000,306000" />
+    <input id="route-end"   class="mini" type="text" placeholder="End: address / 52.7,-2.8 / 340000,300000" />
+    <select id="route-mode" title="Travel mode">
+      <option value="driving">Driving</option>
+      <option value="walking">Walking</option>
+      <option value="cycling">Cycling</option>
+    </select>
+    <button id="btn-pin-start" title="Use current pin as Start">Pin→Start</button>
+    <button id="btn-pin-end" title="Use current pin as End">Pin→End</button>
+    <button id="btn-swap" title="Swap start/end">Swap</button>
+    <button id="btn-route" title="Calculate route">Route</button>
+    <button id="btn-clear-route" title="Clear route">Clear</button>
+  </div>
+
+  <!-- Route summary -->
+  <div class="routebox" id="routebox">
+    <h4>ROUTE:</h4>
+    <div class="row">Mode: <code id="r-mode">—</code></div>
+    <div class="row">Distance: <code id="r-dist">—</code></div>
+    <div class="row">Duration: <code id="r-dur">—</code></div>
+    <div class="row" style="opacity:.8">Tips: Right-click sets Start (first), End (second). Drag start/end markers to tweak.</div>
   </div>
 
   <!-- Pin info panel -->
@@ -155,7 +193,7 @@
     </div>
   </div>
 
-  <!-- NEW: Street View panel -->
+  <!-- Street View panel -->
   <div id="sv-panel">
     <div id="sv-header">
       <div id="sv-title">Street View</div>
@@ -210,7 +248,7 @@
       L.DomEvent.disableScrollPropagation(el);
     });
   }
-  blockEventsFor('#ui-toolbar, #metrics, #info, #sv-panel');
+  blockEventsFor('#ui-toolbar, #metrics, #info, #sv-panel, #routebox');
   blockEventsFor('.leaflet-control-container');
 
   // Initial pin
@@ -260,7 +298,7 @@
   // Guard: ignore clicks that originate from UI/controls
   function clickCameFromUI(evt) {
     const t = evt.originalEvent?.target;
-    return !!(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel'));
+    return !!(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel, #routebox'));
   }
 
   // ---------- Google base (async ready) ----------
@@ -401,7 +439,7 @@
     snapDistance: 20,
     allowSelfIntersection: false,
     continueDrawing: false,
-    finishOn: 'dblclick'   // double-click closes the polygon
+    finishOn: 'dblclick'
   });
 
   map.pm.addControls({
@@ -651,7 +689,6 @@
         panorama.setPov({ heading: 0, pitch: 0 });
         panorama.setVisible(true);
         svTitle.textContent = 'Street View';
-        // Update popout link
         svBtnPop.onclick = () => {
           const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`;
           window.open(url, '_blank', 'noopener');
@@ -663,19 +700,16 @@
     });
   }
 
-  // Open SV at map centre
   btnSVHere.addEventListener('click', () => {
     const c = map.getCenter();
     openSVAt(c.lat, c.lng);
   });
 
-  // Open SV at last pin
   btnSVPin.addEventListener('click', () => {
     const ll = pin.getLatLng();
     openSVAt(ll.lat, ll.lng);
   });
 
-  // Alt+Click anywhere on map to open SV there
   map.on('click', (e) => {
     if (clickCameFromUI(e)) return;
     if (e.originalEvent && e.originalEvent.altKey) {
@@ -683,15 +717,194 @@
     }
   });
 
-  // Right-click context menu -> open SV here
   map.on('contextmenu', (e) => {
-    openSVAt(e.latlng.lat, e.latlng.lng);
+    // Right-click quick routing: set start if empty, else set end
+    if (!routeState.start) {
+      setRoutePoint('start', e.latlng.lat, e.latlng.lng, 'Right-click Start');
+    } else {
+      setRoutePoint('end', e.latlng.lat, e.latlng.lng, 'Right-click End');
+    }
   });
 
-  // Close SV panel
   svBtnClose.addEventListener('click', () => showSVPanel(false));
 
-  // Initial pin info
+  // ---------- Routing (OSRM demo server) ----------
+  const routeLayer = L.layerGroup().addTo(map);
+  let startMarker = null, endMarker = null;
+
+  const elRS = byId('route-start');
+  const elRE = byId('route-end');
+  const elRM = byId('route-mode');
+  const btnPinStart = byId('btn-pin-start');
+  const btnPinEnd   = byId('btn-pin-end');
+  const btnSwap     = byId('btn-swap');
+  const btnRoute    = byId('btn-route');
+  const btnClearRt  = byId('btn-clear-route');
+
+  const rMode = byId('r-mode');
+  const rDist = byId('r-dist');
+  const rDur  = byId('r-dur');
+
+  const routeState = { start: null, end: null }; // {lat, lon, label}
+
+  function updateRouteSummary(mode = '—', distM = null, durS = null) {
+    rMode.textContent = mode;
+    rDist.textContent = distM != null ? `${(distM/1000).toFixed(2)} km` : '—';
+    if (durS != null) {
+      const mins = Math.round(durS/60);
+      const hrs = Math.floor(mins/60);
+      const rem = mins % 60;
+      rDur.textContent = hrs ? `${hrs}h ${rem}m` : `${mins} min`;
+    } else {
+      rDur.textContent = '—';
+    }
+  }
+
+  function setRoutePoint(which, lat, lon, label = '') {
+    const obj = { lat, lon, label };
+    routeState[which] = obj;
+    const formatted = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    if (which === 'start') {
+      elRS.value = label ? `${label} (${formatted})` : formatted;
+      if (startMarker) startMarker.setLatLng([lat,lon]);
+      else {
+        startMarker = L.marker([lat,lon], { draggable: true }).addTo(routeLayer).bindPopup('Start');
+        startMarker.on('dragend', () => {
+          const p = startMarker.getLatLng();
+          routeState.start = { lat: p.lat, lon: p.lng, label: 'Dragged Start' };
+          elRS.value = `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
+        });
+      }
+    } else {
+      elRE.value = label ? `${label} (${formatted})` : formatted;
+      if (endMarker) endMarker.setLatLng([lat,lon]);
+      else {
+        endMarker = L.marker([lat,lon], { draggable: true }).addTo(routeLayer).bindPopup('End');
+        endMarker.on('dragend', () => {
+          const p = endMarker.getLatLng();
+          routeState.end = { lat: p.lat, lon: p.lng, label: 'Dragged End' };
+          elRE.value = `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
+        });
+      }
+    }
+  }
+
+  btnPinStart.addEventListener('click', () => {
+    const p = pin.getLatLng();
+    setRoutePoint('start', p.lat, p.lng, 'Pin');
+  });
+  btnPinEnd.addEventListener('click', () => {
+    const p = pin.getLatLng();
+    setRoutePoint('end', p.lat, p.lng, 'Pin');
+  });
+
+  btnSwap.addEventListener('click', () => {
+    const a = routeState.start, b = routeState.end;
+    routeState.start = b; routeState.end = a;
+    const tmp = elRS.value; elRS.value = elRE.value; elRE.value = tmp;
+    if (startMarker && b) startMarker.setLatLng([b.lat, b.lon]);
+    if (endMarker && a)   endMarker.setLatLng([a.lat, a.lon]);
+  });
+
+  btnClearRt.addEventListener('click', clearRoute);
+  function clearRoute() {
+    routeLayer.clearLayers();
+    startMarker = endMarker = null;
+    routeState.start = routeState.end = null;
+    elRS.value = ''; elRE.value = '';
+    updateRouteSummary('—', null, null);
+  }
+
+  btnRoute.addEventListener('click', planRoute);
+
+  // Smart parser: lat,lon | E,N | postcode | address
+  async function resolvePoint(text) {
+    const raw = (text || '').trim();
+    if (!raw) return null;
+
+    // Try lat,lon
+    const parts = raw.replace(/[()]/g,'').split(/[,\s]+/).filter(Boolean);
+    if (parts.length === 2 && !isNaN(+parts[0]) && !isNaN(+parts[1])) {
+      const a = parseFloat(parts[0]), b = parseFloat(parts[1]);
+      // Heuristic: if both > 1000, treat as E/N
+      if (Math.abs(a) > 1000 && Math.abs(b) > 1000) {
+        const [lon, lat] = proj4(OSGB, WGS84, [a, b]);
+        return { lat, lon, label: 'E/N' };
+      }
+      // else assume lat,lon in degrees
+      if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
+        return { lat: a, lon: b, label: 'Lat/Lon' };
+      }
+    }
+
+    // Postcode
+    const maybePC = normalizeUKPostcode(raw);
+    if (maybePC) {
+      try {
+        const r = await fetch(`https://api.postcodes.io/postcodes/${maybePC}`);
+        const j = await r.json();
+        if (j?.status === 200 && j.result) {
+          return { lat: j.result.latitude, lon: j.result.longitude, label: j.result.postcode };
+        }
+      } catch {}
+    }
+
+    // Fallback: Nominatim (UK-biased)
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      const j = await r.json();
+      if (j && j.length) {
+        return { lat: +j[0].lat, lon: +j[0].lon, label: j[0].display_name?.split(',')[0] || 'Address' };
+      }
+    } catch {}
+    return null;
+  }
+
+  async function planRoute() {
+    try {
+      // Resolve start
+      if (!routeState.start) {
+        const s = await resolvePoint(elRS.value);
+        if (!s) return alert('Set a valid Start (address/postcode/lat,lon/E,N).');
+        setRoutePoint('start', s.lat, s.lon, s.label);
+      }
+      // Resolve end
+      if (!routeState.end) {
+        const e = await resolvePoint(elRE.value);
+        if (!e) return alert('Set a valid End (address/postcode/lat,lon/E,N).');
+        setRoutePoint('end', e.lat, e.lon, e.label);
+      }
+
+      const { start, end } = routeState;
+      if (!start || !end) return;
+
+      const profile = elRM.value; // driving | walking | cycling
+      const url = `https://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Routing failed (${resp.status})`);
+      const data = await resp.json();
+      if (!data || !data.routes || !data.routes.length) throw new Error('No route returned.');
+
+      // Clear previous line, keep markers
+      routeLayer.eachLayer(l => {
+        if (!(l === startMarker || l === endMarker)) routeLayer.removeLayer(l);
+      });
+
+      const route = data.routes[0];
+      const coords = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+      const line = L.polyline(coords, { weight: 5, opacity: 0.85 }).addTo(routeLayer);
+      map.fitBounds(line.getBounds(), { padding: [30,30] });
+
+      updateRouteSummary(profile, route.distance, route.duration);
+    } catch (err) {
+      console.error(err);
+      alert('Could not compute route (network/limits/unreachable). Try another mode or simplify the points.');
+    }
+  }
+
+  // ---------- Initial pin info ----------
   (async () => { await updateInfo(centre[0], centre[1]); })();
 </script>
 
