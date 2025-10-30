@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Car Navigation — Road‑True Routing (Panels unified + Cul‑de‑sac fallback)</title>
+  <title>Leaflet + Car Navigation — Multi‑Corridor Alternatives (Road‑True)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -43,8 +43,8 @@
       padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; flex: 0 0 auto; cursor: pointer;
     }
     .toolbar label { display:flex; align-items:center; gap:6px; padding:4px 8px; }
-    #q { min-width: 280px; flex: 1 1 360px; }
-    .mini { width: 220px; }
+    #q { min-width: 260px; flex: 1 1 320px; }
+    .mini { width: 200px; }
     .toolbar .spacer { width: 6px; flex: 0 0 auto; }
 
     .leaflet-control { z-index: 1200 !important; }
@@ -62,7 +62,7 @@
     code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
 
     .metrics { min-width: 280px; max-width: 420px; flex: 0 1 auto; }
-    .routebox { min-width: 380px; max-width: 860px; flex: 1 1 520px; }
+    .routebox { min-width: 420px; max-width: 960px; flex: 1 1 600px; }
     .infobox { min-width: 280px; max-width: 360px; flex: 0 1 auto; }
 
     .btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer; }
@@ -128,9 +128,22 @@
     <button id="btn-route" title="Calculate routes">Route</button>
     <button id="btn-clear-route" title="Clear routes">Clear</button>
     <label title="Use Google Directions (more alternatives)"><input type="checkbox" id="use-google" checked> Use Google</label>
+
+    <span class="spacer"></span>
+
+    <!-- NEW: Multi‑corridor exploration controls -->
+    <label title="Explore extra corridors by inserting snapped via control points">
+      <input type="checkbox" id="explore-corridors" checked> Explore
+    </label>
+    <label title="How many corridor variants to try (in addition to provider alternatives)">
+      Variants: <input id="variant-count" type="number" min="0" max="12" step="1" value="6" style="width:64px">
+    </label>
+    <label title="How far to push each corridor sideways (meters). Larger = further off the direct line.">
+      Breadth: <input id="variant-breadth" type="number" min="100" max="5000" step="100" value="1200" style="width:72px"> m
+    </label>
   </div>
 
-  <!-- Bottom dock: METRICS + ROUTES + LOCATION now together -->
+  <!-- Bottom dock: METRICS + ROUTES + LOCATION together -->
   <div class="bottom-dock" id="bottom-dock">
     <div class="card metrics" id="metrics">
       <h4>DRAWN POLYGON INFORMATION:</h4>
@@ -153,7 +166,7 @@
         <button id="btn-copy-selected" class="btn" title="Copy selected route coordinates">Copy Coords</button>
         <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
       </div>
-      <div class="row" style="opacity:.8">Strict road geometry. Press <b>P</b> to toggle these panels.</div>
+      <div class="row" style="opacity:.8">Road‑true geometry. Press <b>P</b> to toggle dock. Right‑click to set Start/End, Ctrl+Click to add a Via.</div>
     </div>
 
     <div class="card infobox" id="info">
@@ -339,10 +352,11 @@
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
   map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
 
-  // ---------- Routing (Car, road-true, with cul-de-sac fallback) ----------
+  // ---------- Routing (Car, road‑true) with Multi‑Corridor exploration ----------
   const routeLayer=L.layerGroup().addTo(map);
   let startMarker=null, endMarker=null;
   const elRS=byId('route-start'), elRE=byId('route-end'), elUseGoogle=byId('use-google');
+  const elExplore=byId('explore-corridors'), elVarCount=byId('variant-count'), elBreadth=byId('variant-breadth');
   const rList=byId('r-list');
   const btnPinStart=byId('btn-pin-start'), btnPinEnd=byId('btn-pin-end'), btnSwap=byId('btn-swap'), btnRoute=byId('btn-route'), btnClearRt=byId('btn-clear-route');
   const btnUseSelected=byId('btn-use-selected'), btnCopySelected=byId('btn-copy-selected'), btnZoomAll=byId('btn-zoom-all');
@@ -449,9 +463,9 @@
     if (!res?.routes) return [];
     return res.routes.map(r=>{
       const path = googleRouteToFullPath(r);
-      const legs = r.legs && r.legs[0];
-      const distance = legs?.distance?.value || 0;
-      const duration = legs?.duration?.value || 0;
+      // Combine legs to measure
+      let distance=0, duration=0;
+      (r.legs||[]).forEach(leg=>{ distance+=(leg.distance?.value||0); duration+=(leg.duration?.value||0); });
       return { provider:'Google', tag: vias.length?`via(${vias.length})`:'base', distance, duration, coords: path };
     });
   }
@@ -511,31 +525,69 @@
     return null;
   }
 
-  // Nudge helpers (12 m along/against the S→E vector; then perpendicular)
-  function nudgeCandidates(start, end){
-    const dx=end.lon-start.lon, dy=end.lat-start.lat;
-    const len=Math.hypot(dx,dy)||1;
-    const ux=dx/len, uy=dy/len;
-    const step=12/111320; // ~12m in degrees lat; lon scaled by cos(lat) below
-    const scaleLon = (m, lat)=> (m/(111320*Math.cos((lat*Math.PI)/180)));
-    const along=[
-      { dlat: uy*step, dlon: scaleLon(12, start.lat)*ux },
-      { dlat:-uy*step, dlon:-scaleLon(12, start.lat)*ux }
-    ];
-    const perp=[
-      { dlat:-ux*step, dlon: scaleLon(12, start.lat)*uy },
-      { dlat: ux*step, dlon:-scaleLon(12, start.lat)*uy }
-    ];
-    return [along, perp];
+  // Helpers for corridor vias
+  function metersToDegLat(m){ return m/111320; }
+  function metersToDegLon(m,lat){ return m/(111320*Math.cos((lat*Math.PI)/180)); }
+
+  function generateCorridorVias(start,end,count,breadth){
+    // Build up to `count` via sets by placing two control points at 1/3 and 2/3,
+    // offset alternately left/right with varying magnitude.
+    const result=[];
+    const lat1=start.lat, lon1=start.lon, lat2=end.lat, lon2=end.lon;
+    const dx = lon2 - lon1, dy = lat2 - lat1;
+    const L = Math.hypot(dx,dy)||1;
+    const ux = dx/L, uy = dy/L; // unit vector along line
+    // Left/right perpendicular (in lat/lon space; lon scaled later)
+    const px = -uy, py = ux;
+
+    for (let i=0;i<count;i++){
+      const frac1 = 0.33, frac2 = 0.67;
+      const side = (i%2===0) ? 1 : -1;
+      const scale = 0.5 + (i/Math.max(count-1,1)); // 0.5 .. 1.5
+      const m = breadth * scale; // meters
+      const dlat = metersToDegLat(m*side*1.0);
+      const dlon1 = metersToDegLon(m*side*1.0, lat1 + dy*frac1);
+      const dlon2 = metersToDegLon(m*side*1.0, lat1 + dy*frac2);
+
+      // Base points along the straight line
+      const b1 = { lat: lat1 + dy*frac1, lon: lon1 + dx*frac1 };
+      const b2 = { lat: lat1 + dy*frac2, lon: lon1 + dx*frac2 };
+
+      // Offset perpendicular
+      const via1 = { lat: b1.lat + dlat*py, lon: b1.lon + dlon1*px };
+      const via2 = { lat: b2.lat + dlat*py, lon: b2.lon + dlon2*px };
+
+      result.push([via1, via2]);
+    }
+    return result;
   }
 
-  async function tryPlan(start, end, vias, avoids){
-    // OSRM first
-    const osrm = await fetchOSRM(start, end, vias, avoids.includes('FERRIES'));
-    // Google too
-    let g=[]
-    if (elUseGoogle.checked) g = await fetchGoogle(start, end, vias, avoids.filter(a=>a!=='FERRIES'));
-    return [...osrm, ...g];
+  async function planWithVias(start,end,viaList,avoids){
+    // viaList = array of [via1, via2] (or single via) sets
+    const all=[];
+    // First, provider's own alternatives without our vias:
+    all.push({ label:'base', vias: [] });
+    for (const vs of viaList){
+      all.push({ label:`cvias(${vs.length})`, vias: vs });
+    }
+    let routes=[];
+    for (const bucket of all){
+      // Snap vias
+      const snapped = [];
+      for (const v of bucket.vias){
+        const s = await snapIfNeeded({lat:v.lat, lon:v.lon, label:'corridor'});
+        snapped.push(s);
+      }
+      // OSRM
+      const osrmR = await fetchOSRM(start, end, snapped, avoids.includes('FERRIES'));
+      routes = routes.concat(osrmR);
+      // Google
+      if (elUseGoogle.checked){
+        const gR = await fetchGoogle(start, end, snapped, avoids.filter(a=>a!=='FERRIES'));
+        routes = routes.concat(gR);
+      }
+    }
+    return routes;
   }
 
   async function planRoutes(){
@@ -554,37 +606,27 @@
       if (chkAvoidTolls.checked) avoids.push('TOLLS');
       if (chkAvoidFerries.checked) avoids.push('FERRIES');
 
-      // Try plain
-      let routes = await tryPlan(start, end, routeState.vias, avoids);
-
-      // If nothing, try nudges (cul‑de‑sac / barrier rescue)
-      if (!routes.length){
-        const [along, perp] = nudgeCandidates(start, end);
-        // Pass 1: along ±12m
-        for (const a of along){
-          const s = await snapIfNeeded({lat:start.lat + a.dlat, lon:start.lon + a.dlon, label:start.label});
-          const e = await snapIfNeeded({lat:end.lat   - a.dlat, lon:end.lon   - a.dlon, label:end.label});
-          routes = await tryPlan(s, e, routeState.vias, avoids);
-          if (routes.length) break;
-        }
-        // Pass 2: perpendicular ±12m
-        if (!routes.length){
-          for (const p of perp){
-            const s = await snapIfNeeded({lat:start.lat + p.dlat, lon:start.lon + p.dlon, label:start.label});
-            const e = await snapIfNeeded({lat:end.lat   - p.dlat, lon:end.lon   - p.dlon, label:end.label});
-            routes = await tryPlan(s, e, routeState.vias, avoids);
-            if (routes.length) break;
-          }
-        }
+      // Build corridor candidates
+      let corridorSets = [];
+      if (elExplore.checked){
+        const count = Math.max(0, Math.min(12, parseInt(elVarCount.value||'0',10)));
+        const breadth = Math.max(100, Math.min(5000, parseInt(elBreadth.value||'1200',10)));
+        corridorSets = generateCorridorVias(start, end, count, breadth);
       }
 
-      if (!routes.length){ alert('No routes. Add one manual Via (Ctrl+Click) near the open end and retry.'); return; }
+      // Plan
+      let routes = await planWithVias(start, end, corridorSets, avoids);
 
-      // Render de‑duplicated
+      if (!routes.length){ alert('No routes. Try increasing Breadth or adding one manual Via (Ctrl+Click) mid‑journey.'); return; }
+
+      // De‑duplicate by path shape + distance/duration
       const seen = new Set(); let paletteIndex=0;
+      routes.sort((a,b)=>a.duration-b.duration); // fastest first
       for (const rt of routes){
-        const key = JSON.stringify([Math.round(rt.distance), Math.round(rt.duration), rt.provider.slice(0,1)]);
-        if (seen.has(key)) continue; seen.add(key);
+        // hash by coarse geometry + provider
+        const key = rt.provider[0] + ':' + hashCoords(rt.coords);
+        if (seen.has(key)) continue;
+        seen.add(key);
         addRouteToUI(rt.coords, {provider:rt.provider, distance:rt.distance, duration:rt.duration}, paletteIndex++);
       }
       setActiveRoute(0);
