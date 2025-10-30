@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Google + OSRM — At Least 2 Routes per Provider</title>
+  <title>Leaflet + Multi‑Engine Routing — Forced Alternatives (Avoids + Detour Vias)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -43,69 +43,44 @@
       padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; flex: 0 0 auto; cursor: pointer;
     }
     .toolbar label { display:flex; align-items:center; gap:6px; padding:4px 8px; }
-    #q { min-width: 320px; flex: 1 1 420px; }
-    .mini { width: 220px; }
+    #q { min-width: 280px; flex: 1 1 360px; }
+    .mini { width: 200px; }
     .toolbar .spacer { width: 6px; flex: 0 0 auto; }
 
     /* Leaflet controls above panels */
     .leaflet-control { z-index: 1200 !important; }
-    .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 90px !important; }
+    .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 120px !important; }
 
     /* Info (BR) */
-    .info {
-      position: absolute; z-index: 1000; right: 10px; bottom: 50px;
-      background: #fff; border-radius: 10px; padding: 10px 12px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif;
-      min-width: 280px; max-width: 360px;
-    }
-    .info h4 { margin: 0 0 6px 0; font-size: 14px; }
-    .info .row { margin: 4px 0; }
-    .info code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
+    .info, .metrics, .routebox { background: #fff; border-radius: 10px; padding: 10px 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif; }
+    .info { position: absolute; z-index: 1000; right: 10px; bottom: 50px; min-width: 280px; max-width: 360px; }
+    .metrics { position: absolute; z-index: 1000; left: 10px; bottom: 50px; min-width: 260px; max-width: 380px; }
+    .routebox { position: absolute; z-index: 1000; left: 410px; bottom: 50px; min-width: 380px; max-width: 620px; }
 
-    /* Metrics (BL) */
-    .metrics {
-      position: absolute; z-index: 1000; left: 10px; bottom: 50px;
-      background: #fff; border-radius: 10px; padding: 10px 12px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif;
-      min-width: 260px; max-width: 380px;
-    }
-    .metrics h4 { margin: 0 0 6px 0; font-size: 14px; }
-    .metrics .row { margin: 4px 0; }
-    .metrics .btn {
+    .info h4, .metrics h4, .routebox h4 { margin: 0 0 6px 0; font-size: 14px; }
+    .row { margin: 4px 0; }
+    code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
+
+    .metrics .btn, .routebox button {
       padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer;
     }
     .metrics .btn + .btn { margin-left: 6px; }
 
-    /* Routes (next to metrics) */
-    .routebox {
-      position: absolute; z-index: 1000; left: 410px; bottom: 50px;
-      background: #fff; border-radius: 10px; padding: 10px 12px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif;
-      min-width: 340px; max-width: 560px;
-    }
-    .routebox h4 { margin: 0 0 6px 0; font-size: 14px; }
-    .routebox .row { margin: 4px 0; }
-    .route-item {
-      display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid #eee; border-radius:8px; margin:6px 0; cursor:pointer;
-    }
+    .route-item { display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid #eee; border-radius:8px; margin:6px 0; cursor:pointer; }
     .route-swatch { width:14px; height:14px; border-radius:3px; border:1px solid #bbb; }
     .route-item.active { border-color:#bbb; background:#fafafa; }
-    .routebox button {
-      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer;
-    }
     .provider-tag { font-size: 11px; opacity:.8; padding:2px 6px; border:1px solid #ddd; border-radius:6px; }
 
-    @media (max-width: 900px) { .routebox { left: 10px; bottom: 10px; max-width: 360px; } }
+    .via-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1px solid #ddd; border-radius:14px; margin-right:6px; }
+    .via-chip button { border:none; background:transparent; cursor:pointer; }
+
+    @media (max-width: 1100px) { .routebox { left: 10px; bottom: 10px; max-width: 360px; } }
 
     /* Street View panel */
-    #sv-panel {
-      position: absolute; z-index: 1100; right: 10px; bottom: 10px;
-      width: 420px; height: 300px; background: #fff; border-radius: 10px;
-      box-shadow: 0 2px 12px rgba(0,0,0,.18); display: none; overflow: hidden;
-      border: 1px solid #ddd; resize: both;
-    }
-    #sv-header { height: 36px; display:flex; align-items:center; justify-content:space-between;
-      padding: 0 10px; border-bottom: 1px solid #eee; background:#fafafa; font: 13px system-ui; }
+    #sv-panel { position: absolute; z-index: 1100; right: 10px; bottom: 10px; width: 420px; height: 300px;
+      background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,.18); display: none; overflow: hidden; border: 1px solid #ddd; resize: both; }
+    #sv-header { height: 36px; display:flex; align-items:center; justify-content:space-between; padding: 0 10px; border-bottom: 1px solid #eee; background:#fafafa; font: 13px system-ui; }
     #sv-title { font-weight: 600; }
     #sv-actions button { margin-left: 6px; padding: 4px 8px; border: 1px solid #ddd; background:#fff; border-radius: 6px; cursor: pointer; }
     #pano { width: 100%; height: calc(100% - 36px); }
@@ -149,6 +124,16 @@
       <option value="walking">Walking</option>
       <option value="cycling">Cycling</option>
     </select>
+    <label title="Prefer unusual paths"><input type="checkbox" id="prefer-odd"> Explore off‑beat</label>
+    <label title="Avoid motorways (Google only)"><input type="checkbox" id="avoid-hwy"> Avoid highways</label>
+    <label title="Avoid tolls (Google only)"><input type="checkbox" id="avoid-tolls"> Avoid tolls</label>
+    <label title="Avoid ferries"><input type="checkbox" id="avoid-ferries"> Avoid ferries</label>
+    <select id="detour-level" title="Generate artificial detour vias">
+      <option value="none">No detours</option>
+      <option value="light">Detour: Light</option>
+      <option value="medium" selected>Detour: Medium</option>
+      <option value="heavy">Detour: Heavy</option>
+    </select>
     <button id="btn-pin-start" title="Use current pin as Start">Pin→Start</button>
     <button id="btn-pin-end" title="Use current pin as End">Pin→End</button>
     <button id="btn-swap" title="Swap start/end">Swap</button>
@@ -161,12 +146,16 @@
   <div class="routebox" id="routebox">
     <h4>ROUTES:</h4>
     <div class="row">Mode: <code id="r-mode">—</code></div>
+    <div class="row">Vias (Ctrl+Click to add): <span id="vias"></span> <button id="clear-vias">Clear vias</button></div>
     <div id="r-list" class="row"></div>
-    <div class="row" style="margin-top:8px; display:flex; gap:6px;">
+    <div class="row" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
       <button id="btn-use-selected" title="Add the selected route to drawings">Use Selected</button>
       <button id="btn-copy-selected" title="Copy selected route coordinates">Copy Coords</button>
+      <button id="btn-zoom-all" title="Zoom to all routes">Zoom All</button>
     </div>
-    <div class="row" style="opacity:.8">We ask each provider for multiple variants (base + avoids) and dedupe. Right‑click sets Start→End on map.</div>
+    <div class="row" style="opacity:.8">
+      Tip: if providers return only one option, toggle <b>Explore off‑beat</b> and raise <b>Detour</b> level.
+    </div>
   </div>
 
   <!-- Info -->
@@ -175,20 +164,7 @@
     <div class="row">Postcode: <code id="postcode">—</code></div>
     <div class="row">Lat/Lon: <code id="latlon">—</code></div>
     <div class="row">Easting/Northing: <code id="en">—</code></div>
-    <div class="row" style="opacity:.8">Shift+Click to drop a pin • Alt+Click for Street View</div>
-  </div>
-
-  <!-- Metrics -->
-  <div class="metrics" id="metrics">
-    <h4>DRAWN POLYGON INFORMATION:</h4>
-    <div class="row">Type: <code id="m-type">—</code></div>
-    <div class="row">Area: <code id="m-area">—</code></div>
-    <div class="row">Perimeter: <code id="m-perim">—</code></div>
-    <div class="row">Longest edge: <code id="m-longest">—</code></div>
-    <div class="row" style="margin-top:8px;">
-      <button id="btn-copy" class="btn">Copy Coords</button>
-      <button id="btn-center-shape" class="btn">Center on Shape</button>
-    </div>
+    <div class="row" style="opacity:.8">Shift+Click: drop pin • Ctrl+Click: add via • Alt+Click: Street View • Right‑click: set Start/End</div>
   </div>
 
   <!-- Street View -->
@@ -297,24 +273,8 @@
     elPostcode.textContent=pc; pin.setPopupContent(pc);
   }
   function setPin(lat,lon,recenter=false){ if(!isNum(lat)||!isNum(lon)) return; pin.setLatLng([lat,lon]).addTo(map).openPopup(); if(recenter) map.setView([lat,lon], Math.max(map.getZoom(),18)); updateInfo(lat,lon); }
-  byId('mode').addEventListener('change',()=>{ const m=byId('mode').value; byId('q').placeholder = m==='postcode'?'SY3 0NS  |  10 Downing Street': m==='latlon'?'52.677027, -2.773167':'349000, 306000'; });
-  byId('go').addEventListener('click', runUnifiedSearch);
-  byId('q').addEventListener('keydown', e=>{ if(e.key==='Enter') runUnifiedSearch(); });
-  async function runUnifiedSearch(){
-    const mode=byId('mode').value, raw=byId('q').value.trim(); if(!raw) return;
-    if(mode==='latlon'){ const p=raw.split(/[,\s]+/).filter(Boolean); if(p.length!==2) return alert('Use: 52.677027, -2.773167'); const lat=+p[0], lon=+p[1]; if(!isNum(lat)||!isNum(lon)) return alert('Invalid lat/lon.'); setPin(lat,lon,true); return; }
-    if(mode==='en'){ const p=raw.split(/[,\s]+/).filter(Boolean); if(p.length!==2) return alert('Use: 349000, 306000'); const E=+p[0], N=+p[1]; if(!isNum(E)||!isNum(N)) return alert('Invalid E/N.'); const [lon,lat]=proj4(OSGB,WGS84,[E,N]); setPin(lat,lon,true); return; }
-    try{
-      const norm=normalizeUKPostcode(raw);
-      if(norm){ const resp=await fetch(`https://api.postcodes.io/postcodes/${norm}`); const j=await resp.json(); if(j?.status===200&&j.result){ setPin(j.result.latitude,j.result.longitude,true); return; } }
-      const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
-      const r=await fetch(url,{headers:{'Accept':'application/json'}}); const j=await r.json();
-      if(j&&j.length){ const {lat,lon,boundingbox}=j[0]; setPin(+lat,+lon,true); if(boundingbox){ const bb=[[+boundingbox[0],+boundingbox[2]],[+boundingbox[1],+boundingbox[3]]]; map.fitBounds(bb,{maxZoom:19}); } }
-      else alert('No results.');
-    }catch{ alert('Search failed.'); }
-  }
 
-  // Drawing & metrics
+  // Drawing & metrics (unchanged core)
   const defaultStyle={color:"#00AEEF",weight:2,fillOpacity:0.18}, activeStyle={color:"#007ACC",weight:2,fillOpacity:0.20};
   map.pm.setGlobalOptions({ snappable:true, snapDistance:20, allowSelfIntersection:false, continueDrawing:false, finishOn:'dblclick' });
   map.pm.addControls({ position:"topleft", drawMarker:true, drawPolyline:true, drawRectangle:true, drawPolygon:true, drawCircle:true, drawCircleMarker:true, editMode:true, dragMode:true, cutPolygon:true, removalMode:true });
@@ -339,20 +299,20 @@
       layer.on('pm:edit',()=>updateMetrics(layer)); layer.on('pm:dragend',()=>updateMetrics(layer)); layer.on('pm:enable',()=>{ if(layer.setStyle) layer.setStyle(activeStyle); }); layer.on('pm:disable',()=>{ if(layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); }); updateMetrics(layer); } }
   map.on("pm:create", e=>{ const layer=e.layer; if(layer.setStyle&&isPolygonish(layer)) layer.setStyle(defaultStyle); if(layer.pm&&layer.pm.enable&&isPolygonish(layer)) layer.pm.enable({allowSelfIntersection:false,snappable:true,snapDistance:20}); bindEditableHandlers(layer); if(isPolygonish(layer)) setSelected(layer); });
 
-  // Simple pin drag behaviour
-  map.on('click', e=>{ const t=e.originalEvent?.target; if(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel, #routebox')) return;
+  // Simple map click behaviours
+  map.on('click', e=>{
+    const t=e.originalEvent?.target;
+    if(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel, #routebox')) return;
     if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
     if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
     if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
-    if(!e.originalEvent || !e.originalEvent.shiftKey) return; setPin(e.latlng.lat, e.latlng.lng, false); });
-
-  // Copy & center buttons
-  byId('btn-copy').addEventListener('click', async ()=>{ if(!lastShapeLayer) return alert('Draw/select a polygon/circle first.'); const text=buildCoordsText(lastShapeLayer); await copyText(text); });
-  byId('btn-center-shape').addEventListener('click', ()=>{ if(lastShapeLayer && isPolygonish(lastShapeLayer)){ if(lastShapeLayer instanceof L.Circle) map.flyTo(lastShapeLayer.getLatLng(), Math.max(map.getZoom(),18)); else map.fitBounds(lastShapeLayer.getBounds(), {maxZoom: Math.max(map.getZoom(),19)});} else map.flyTo(pin.getLatLng(), Math.max(map.getZoom(),18)); });
-  function buildCoordsText(layer){ if(layer instanceof L.Circle){ const c=layer.getLatLng(), r=layer.getRadius(); const poly=turf.circle([c.lng,c.lat], r/1000, {steps:64, units:'kilometers'}); return JSON.stringify(poly.geometry.coordinates); }
-    const gj=layer.toGeoJSON(), geom=gj?.geometry; if(!geom) throw new Error('No geometry'); if(!(geom.type==='Polygon'||geom.type==='MultiPolygon')) throw new Error('Only polygons/circles.'); return JSON.stringify(geom.coordinates); }
-  async function copyText(text){ if(navigator.clipboard?.writeText) return navigator.clipboard.writeText(text); const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.top='-9999px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); ta.remove(); }
-  function longestEdgeMetersFromGeom(geom){ let longest=0; const processRing=(ring)=>{ const n=ring.length; for(let i=0;i<n;i++){ const a=ring[i], b=ring[(i+1)%n]; const km=turf.distance(a,b,{units:'kilometers'}), m=km*1000; if(m>longest) longest=m; } }; if(geom.type==='Polygon') geom.coordinates.forEach(processRing); else if(geom.type==='MultiPolygon') geom.coordinates.forEach(poly=>poly.forEach(processRing)); return longest; }
+    if(e.originalEvent?.ctrlKey){
+      addViaPoint(e.latlng.lat, e.latlng.lng, 'via');
+      return;
+    }
+    if(!e.originalEvent || !e.originalEvent.shiftKey) return;
+    setPin(e.latlng.lat, e.latlng.lng, false);
+  });
 
   // Street View
   let svService=null, panorama=null; const svPanel=byId('sv-panel'), svTitle=byId('sv-title'), svBtnClose=byId('sv-close'), svBtnPop=byId('sv-popout');
@@ -362,20 +322,52 @@
   byId('btn-sv-center').addEventListener('click',()=>{ const c=map.getCenter(); openSVAt(c.lat,c.lng); });
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
   map.on('click', e=>{ const t=e.originalEvent?.target; if(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel, #routebox')) return; if(e.originalEvent?.altKey) openSVAt(e.latlng.lat,e.latlng.lng); });
+  map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
 
-  // Routing: OSRM + Google (ensure >=2 per provider when possible)
+  // Routing State + UI
   const routeLayer=L.layerGroup().addTo(map);
   let startMarker=null, endMarker=null;
   const elRS=byId('route-start'), elRE=byId('route-end'), elRM=byId('route-mode'), elUseGoogle=byId('use-google');
   const rMode=byId('r-mode'), rList=byId('r-list');
   const btnPinStart=byId('btn-pin-start'), btnPinEnd=byId('btn-pin-end'), btnSwap=byId('btn-swap'), btnRoute=byId('btn-route'), btnClearRt=byId('btn-clear-route');
-  const btnUseSelected=byId('btn-use-selected'), btnCopySelected=byId('btn-copy-selected');
+  const btnUseSelected=byId('btn-use-selected'), btnCopySelected=byId('btn-copy-selected'), btnZoomAll=byId('btn-zoom-all');
+  const chkOdd=byId('prefer-odd'), chkAvoidHwy=byId('avoid-hwy'), chkAvoidTolls=byId('avoid-tolls'), chkAvoidFerries=byId('avoid-ferries'), selDetour=byId('detour-level');
+  const viasWrap=byId('vias'), btnClearVias=byId('clear-vias');
 
-  const routeState={ start:null, end:null, polylines:[], labels:[], meta:[], activeIdx:-1 };
+  const routeState={ start:null, end:null, polylines:[], labels:[], meta:[], activeIdx:-1, vias:[], viaMarkers:[] };
   const PALETTE=['#e53935','#43a047','#1e88e5','#8e24aa','#fb8c00','#039be5','#6d4c41','#c0ca33','#8d6e63','#3949ab','#00897b','#f4511e'];
 
   function updateModeLabel(){ rMode.textContent = elRM.value || '—'; }
   updateModeLabel(); elRM.addEventListener('change', updateModeLabel);
+
+  function renderVias(){
+    viasWrap.innerHTML='';
+    routeState.vias.forEach((v,i)=>{
+      const chip=document.createElement('span');
+      chip.className='via-chip';
+      chip.innerHTML=`Via ${i+1} <button title="remove">✕</button>`;
+      chip.querySelector('button').onclick=()=>removeVia(i);
+      viasWrap.appendChild(chip);
+    });
+  }
+  function addViaPoint(lat,lon, label='via'){
+    routeState.vias.push({lat,lon,label});
+    const m=L.circleMarker([lat,lon],{radius:6, color:'#7b1fa2', weight:2, fillOpacity:0.6}).addTo(routeLayer).bindTooltip('Via');
+    routeState.viaMarkers.push(m);
+    renderVias();
+  }
+  function removeVia(idx){
+    routeState.vias.splice(idx,1);
+    const m=routeState.viaMarkers.splice(idx,1)[0];
+    if(m) routeLayer.removeLayer(m);
+    renderVias();
+  }
+  btnClearVias.addEventListener('click',()=>{
+    routeState.vias=[];
+    routeState.viaMarkers.forEach(m=>routeLayer.removeLayer(m));
+    routeState.viaMarkers=[];
+    renderVias();
+  });
 
   function setRoutePoint(which, lat, lon, label=''){
     const obj={lat,lon,label}; routeState[which]=obj; const formatted=`${lat.toFixed(6)}, ${lon.toFixed(6)}`;
@@ -389,11 +381,9 @@
   btnPinStart.addEventListener('click',()=>{ const p=pin.getLatLng(); setRoutePoint('start',p.lat,p.lng,'Pin'); });
   btnPinEnd  .addEventListener('click',()=>{ const p=pin.getLatLng(); setRoutePoint('end',p.lat,p.lng,'Pin'); });
   btnSwap    .addEventListener('click',()=>{ const a=routeState.start, b=routeState.end; routeState.start=b; routeState.end=a; const tmp=elRS.value; elRS.value=elRE.value; elRE.value=tmp; if(startMarker&&b) startMarker.setLatLng([b.lat,b.lon]); if(endMarker&&a) endMarker.setLatLng([a.lat,a.lon]); });
-  btnClearRt .addEventListener('click', clearRoutes);
-  btnRoute   .addEventListener('click', planRoutes);
-  map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
 
   function clearRoutes(){ routeState.polylines.forEach(pl=>routeLayer.removeLayer(pl)); routeState.labels.forEach(lb=>routeLayer.removeLayer(lb)); routeState.polylines=[]; routeState.labels=[]; routeState.meta=[]; routeState.activeIdx=-1; rList.innerHTML=''; }
+  btnClearRt.addEventListener('click', clearRoutes);
 
   async function resolvePoint(text){
     const raw=(text||'').trim(); if(!raw) return null;
@@ -432,65 +422,39 @@
     return JSON.stringify([rounded.length, rounded.slice(0,200)]);
   }
 
-  async function fetchOSRMVariants(profile, start, end, minVariants=2, maxVariants=6){
-    const results = [];
-    const seen = new Set();
-    const url = (alts) => `https://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson&alternatives=${alts}&steps=false`;
-    try {
-      // Ask for many alternatives up-front; server will cap
-      const r = await fetch(url(maxVariants));
-      const j = await r.json();
-      const routes = (j.routes||[]).map(rt=>({ tag:'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
-      for (const rt of routes){
-        const h = hashCoords(rt.coords);
-        if (seen.has(h)) continue;
-        seen.add(h); results.push(rt);
-        if (results.length >= minVariants) break;
-      }
-    } catch {}
-    return results;
+  function detourOffsets(level){
+    if(level==='none') return [];
+    if(level==='light') return [150, -150];
+    if(level==='medium') return [200, -200, 450, -450];
+    return [250, -250, 600, -600, 1000, -1000]; // heavy
   }
 
-  async function fetchGoogleVariants(profile, start, end, minVariants=2, maxVariants=6){
-    const variants = [{tag:'base'}, {tag:'avoid:tolls', avoid:['TOLLS']}, {tag:'avoid:highways', avoid:['HIGHWAYS']}, {tag:'avoid:ferries', avoid:['FERRIES']}, {tag:'avoid:tolls,highways', avoid:['TOLLS','HIGHWAYS']}, {tag:'avoid:tolls,ferries', avoid:['TOLLS','FERRIES']}];
-    const svc = new google.maps.DirectionsService();
-    const gMode = profile==='driving'?'DRIVING':profile==='walking'?'WALKING':'BICYCLING';
-    const results = []; const seen = new Set();
-
-    for (const v of variants){
-      if (results.length >= maxVariants) break;
-      const req = {
-        origin: {lat:start.lat, lng:start.lon},
-        destination: {lat:end.lat, lng:end.lon},
-        travelMode: gMode,
-        provideRouteAlternatives: true
-      };
-      if (v.avoid) req.avoid = v.avoid;
-      const routes = await new Promise((resolve)=>{
-        svc.route(req, (res,status)=>{
-          if(status!=='OK' || !res?.routes) return resolve([]);
-          resolve(res.routes.map(r=>{
-            const path = (r.overview_path || []).map(ll=>[ll.lat(), ll.lng()]);
-            const legs = r.legs && r.legs[0];
-            const distance = legs?.distance?.value || 0;
-            const duration = legs?.duration?.value || 0;
-            return { tag:v.tag, distance, duration, coords: path };
-          }));
-        });
+  function buildDetourVias(start, end, level){
+    const mids = [];
+    try{
+      const startPt = turf.point([start.lon, start.lat]);
+      const endPt = turf.point([end.lon, end.lat]);
+      const mid = turf.midpoint(startPt, endPt);
+      const bearing = turf.bearing(startPt, endPt);
+      const perp1 = bearing + 90;
+      const offs = detourOffsets(level);
+      offs.forEach(m => {
+        const via = turf.destination(mid, Math.abs(m)/1000, m>0?perp1:perp1-180, {units:'kilometers'});
+        const [lon, lat] = via.geometry.coordinates;
+        mids.push({lat, lon, label: m>0?`via-R${Math.abs(m)}`:`via-L${Math.abs(m)}`});
       });
-
-      for (const rt of routes){
-        const h = hashCoords(rt.coords);
-        if (seen.has(h)) continue;
-        seen.add(h); results.push(rt);
-        if (results.length >= minVariants) break;
-      }
-      if (results.length >= minVariants) break;
-    }
-    return results;
+    }catch{}
+    return mids;
   }
 
-  const routeLayer=L.layerGroup().addTo(map);
+  btnZoomAll.addEventListener('click',()=>{
+    const groups = routeState.polylines.filter(Boolean);
+    if(!groups.length) return;
+    let bounds = groups[0].getBounds();
+    groups.slice(1).forEach(pl => bounds = bounds.extend(pl.getBounds()));
+    map.fitBounds(bounds, {padding:[30,30]});
+  });
+
   async function planRoutes(){
     try{
       if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
@@ -500,63 +464,109 @@
 
       const profile = elRM.value;
       const palette = PALETTE.slice();
-      const overallSeen = new Set(); // global dedupe (across providers)
+      const overallSeen = new Set();
       let displayOrder = 0;
 
-      // OSRM first
-      const osrmRoutes = await fetchOSRMVariants(profile, start, end, 2, 6);
-      osrmRoutes.forEach(rt=>{
-        const h = hashCoords(rt.coords); if (overallSeen.has(h)) return; overallSeen.add(h);
-        const idx = routeState.polylines.length;
-        const color = palette[idx % palette.length];
-        const poly = L.polyline(rt.coords, {color, weight:4, opacity:0.7}).addTo(routeLayer);
-        routeState.polylines.push(poly);
-        const mid = midpointLatLng(rt.coords);
-        const badge = makeNumberBadge(++displayOrder, color, mid).addTo(routeLayer);
-        routeState.labels.push(badge);
-        routeState.meta.push({provider:`OSRM (${rt.tag})`, distance:rt.distance, duration:rt.duration, color});
+      // Assemble vias: user‑added + synthetic detours if "Explore off‑beat" or detour level set
+      let synthetic = [];
+      if (chkOdd.checked || selDetour.value!=='none'){
+        synthetic = buildDetourVias(start, end, selDetour.value);
+      }
+      const allViaSets = [];
+      // Each set is a list of vias to apply in order (Google uses waypoints; OSRM appends coord sequence)
+      if (routeState.vias.length) allViaSets.push(routeState.vias);
+      synthetic.forEach(v => allViaSets.push([v])); // single‑via pushes
 
-        const km=(rt.distance/1000).toFixed(2);
-        const mins=Math.round(rt.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
-        const item=document.createElement('div'); item.className='route-item';
-        item.innerHTML = `<div class="route-swatch" style="background:${color}"></div>
-                          <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">OSRM</span> <span class="provider-tag">${rt.tag}</span></div>`;
-        item.onclick = () => setActiveRoute(idx);
-        poly.on('click', () => setActiveRoute(idx));
-        rList.appendChild(item);
-      });
+      // Always include the "no via" baseline set first
+      allViaSets.unshift([]);
 
-      // Google next (if enabled)
-      if (elUseGoogle.checked && window.google?.maps){
-        const gRoutes = await fetchGoogleVariants(profile, start, end, 2, 6);
-        gRoutes.forEach(rt=>{
-          const h = hashCoords(rt.coords); if (overallSeen.has(h)) return; overallSeen.add(h);
-          const idx = routeState.polylines.length;
-          const color = palette[idx % palette.length];
-          const poly = L.polyline(rt.coords, {color, weight:4, opacity:0.7}).addTo(routeLayer);
-          routeState.polylines.push(poly);
-          const mid = midpointLatLng(rt.coords);
-          const badge = makeNumberBadge(++displayOrder, color, mid).addTo(routeLayer);
-          routeState.labels.push(badge);
-          routeState.meta.push({provider:`Google (${rt.tag})`, distance:rt.distance, duration:rt.duration, color});
+      // ---- OSRM ----
+      async function fetchOSRM(profile, start, end, vias, avoidFerries){
+        const coords = [[start.lon,start.lat], ...vias.map(v=>[v.lon,v.lat]), [end.lon,end.lat]]
+          .map(pair=>pair.join(',')).join(';');
+        const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'true', steps:'false' });
+        if (avoidFerries) params.set('exclude','ferry'); // supported on demo server
+        const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?${params}`;
+        const j = await fetch(url).then(r=>r.json()).catch(()=>null);
+        if (!j||!j.routes) return [];
+        return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
+      }
 
-          const km=(rt.distance/1000).toFixed(2);
-          const mins=Math.round(rt.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
-          const item=document.createElement('div'); item.className='route-item';
-          item.innerHTML = `<div class="route-swatch" style="background:${color}"></div>
-                            <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">Google</span> <span class="provider-tag">${rt.tag}</span></div>`;
-          item.onclick = () => setActiveRoute(idx);
-          poly.on('click', () => setActiveRoute(idx));
-          rList.appendChild(item);
+      // ---- Google ----
+      async function fetchGoogle(profile, start, end, vias, avoids){
+        if (!window.google?.maps) return [];
+        const svc = new google.maps.DirectionsService();
+        const gMode = profile==='driving'?'DRIVING':profile==='walking'?'WALKING':'BICYCLING';
+        const req = {
+          origin: {lat:start.lat, lng:start.lon},
+          destination: {lat:end.lat, lng:end.lon},
+          travelMode: gMode,
+          provideRouteAlternatives: true
+        };
+        if (vias && vias.length){
+          req.waypoints = vias.map(v=>({ location:{lat:v.lat, lng:v.lon}, stopover:false }));
+        }
+        if (avoids.length) req.avoid = avoids;
+        const res = await new Promise(resolve => svc.route(req,(r,st)=>resolve(st==='OK'?r:null)));
+        if (!res?.routes) return [];
+        return res.routes.map(r=>{
+          const path = (r.overview_path||[]).map(ll=>[ll.lat(), ll.lng()]);
+          const legs = r.legs && r.legs[0];
+          const distance = legs?.distance?.value || 0;
+          const duration = legs?.duration?.value || 0;
+          return { provider:'Google', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance, duration, coords: path };
         });
       }
 
-      if(routeState.polylines.length===0) alert('No routes found.');
+      // Collect across via sets and avoids
+      for (const vias of allViaSets){
+        // OSRM
+        const osrmRoutes = await fetchOSRM(profile, start, end, vias, chkAvoidFerries.checked);
+        osrmRoutes.forEach(rt=>{
+          const h=hashCoords(rt.coords); if (overallSeen.has(h)) return; overallSeen.add(h);
+          const idx=routeState.polylines.length; const color=palette[idx % palette.length];
+          const poly=L.polyline(rt.coords,{color,weight:4,opacity:0.7}).addTo(routeLayer);
+          routeState.polylines.push(poly);
+          const mid=midpointLatLng(rt.coords); const badge=makeNumberBadge(++displayOrder,color,mid).addTo(routeLayer);
+          routeState.labels.push(badge); routeState.meta.push({provider:`OSRM (${rt.tag||'base'})`, distance:rt.distance, duration:rt.duration, color});
+          const km=(rt.distance/1000).toFixed(2); const mins=Math.round(rt.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
+          const item=document.createElement('div'); item.className='route-item';
+          item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
+            <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">OSRM</span> ${rt.tag&&rt.tag!=='base'?`<span class="provider-tag">${rt.tag}</span>`:''}</div>`;
+          item.onclick=()=>setActiveRoute(idx); poly.on('click',()=>setActiveRoute(idx)); rList.appendChild(item);
+        });
+
+        // Google
+        if (elUseGoogle.checked){
+          const avoids=[];
+          if (chkAvoidHwy.checked) avoids.push('HIGHWAYS');
+          if (chkAvoidTolls.checked) avoids.push('TOLLS');
+          if (chkAvoidFerries.checked) avoids.push('FERRIES');
+          const gRoutes = await fetchGoogle(profile, start, end, vias, avoids);
+          gRoutes.forEach(rt=>{
+            const h=hashCoords(rt.coords); if (overallSeen.has(h)) return; overallSeen.add(h);
+            const idx=routeState.polylines.length; const color=palette[idx % palette.length];
+            const poly=L.polyline(rt.coords,{color,weight:4,opacity:0.7}).addTo(routeLayer);
+            routeState.polylines.push(poly);
+            const mid=midpointLatLng(rt.coords); const badge=makeNumberBadge(++displayOrder,color,mid).addTo(routeLayer);
+            routeState.labels.push(badge); routeState.meta.push({provider:`Google (${rt.tag||'base'})`, distance:rt.distance, duration:rt.duration, color});
+            const km=(rt.distance/1000).toFixed(2); const mins=Math.round(rt.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
+            const item=document.createElement('div'); item.className='route-item';
+            item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
+              <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">Google</span> ${rt.tag&&rt.tag!=='base'?`<span class="provider-tag">${rt.tag}</span>`:''} ${avoids.length?`<span class="provider-tag">avoid:${avoids.join(',').toLowerCase()}</span>`:''}</div>`;
+            item.onclick=()=>setActiveRoute(idx); poly.on('click',()=>setActiveRoute(idx)); rList.appendChild(item);
+          });
+        }
+      }
+
+      if(routeState.polylines.length===0) alert('No routes found. Try adding a via (Ctrl+Click) or increasing Detour.');
       else setActiveRoute(0);
     }catch(err){
-      console.error(err); alert('Routing failed. Check points, then try again.');
+      console.error(err); alert('Routing failed. Check points and try again.');
     }
   }
+
+  btnRoute.addEventListener('click', planRoutes);
 
   // Use / Copy selected route
   function getActiveRouteCoords(){ const idx=routeState.activeIdx; if(idx==null||idx<0) return null; const pl=routeState.polylines[idx]; if(!pl) return null; const latlngs=pl.getLatLngs(); return Array.isArray(latlngs[0])?latlngs.flat():latlngs; }
