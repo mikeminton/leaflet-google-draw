@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Multi‑Engine Routing — Anti‑Wiggle & Panels Fixed</title>
+  <title>Leaflet + Multi‑Engine Routing — Anti‑Wiggle (Fixed Panels & Clicks)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -50,7 +50,7 @@
     .leaflet-control { z-index: 1200 !important; }
     .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 120px !important; }
 
-    /* Bottom dock (guaranteed visible) */
+    /* Bottom dock */
     .bottom-dock {
       position: absolute; z-index: 1400; left: 10px; right: 10px; bottom: 10px;
       display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap;
@@ -74,8 +74,10 @@
     .via-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1px solid #ddd; border-radius:14px; margin-right:6px; }
     .via-chip button { border:none; background:transparent; cursor:pointer; }
 
-    /* Info and SV */
-    .info { position: absolute; z-index: 1300; right: 10px; top: 70px; min-width: 280px; max-width: 360px; }
+    /* Info panel moved to top-left to avoid Layers control */
+    .info { position: absolute; z-index: 1300; left: 10px; top: 70px; min-width: 280px; max-width: 360px; }
+
+    /* Street View */
     #sv-panel { position: absolute; z-index: 1450; right: 10px; bottom: 10px; width: 420px; height: 300px;
       background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,.18); display: none; overflow: hidden; border: 1px solid #ddd; resize: both; }
     #sv-header { height: 36px; display:flex; align-items:center; justify-content:space-between; padding: 0 10px; border-bottom: 1px solid #eee; background:#fafafa; font: 13px system-ui; }
@@ -167,12 +169,12 @@
         <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
       </div>
       <div class="row" style="opacity:.8">
-        Anti‑wiggle enabled: snapped vias, micro‑detour scrubber, and 12&nbsp;m simplify. Press <b>P</b> to toggle panels if they’re ever hidden.
+        Anti‑wiggle enabled. Press <b>P</b> if you ever “lose” these panels.
       </div>
     </div>
   </div>
 
-  <!-- Info -->
+  <!-- Info (top-left now) -->
   <div class="card info" id="info">
     <h4>LOCATION INFORMATION:</h4>
     <div class="row">Postcode: <code id="postcode">—</code></div>
@@ -280,7 +282,7 @@
     L.control.layers({ "Esri Satellite": esriImagery, "OSM Streets": osmStreets }, { "Esri Labels (Hybrid)": esriLabels }, { collapsed: false }).addTo(map);
   }
 
-  // Info
+  // Info panel plumbing
   const elPostcode = byId('postcode'), elLatLon = byId('latlon'), elEN = byId('en');
   function normalizeUKPostcode(str){ if(!str) return null; const s=str.toUpperCase().replace(/\s+/g,''); return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s)?s:null; }
   async function updateInfo(lat,lon){
@@ -299,6 +301,28 @@
   let selectedLayer=null, lastShapeLayer=null;
   const mType=byId('m-type'), mArea=byId('m-area'), mPerim=byId('m-perim'), mLongest=byId('m-longest');
   const isPolygonish = layer => (layer instanceof L.Polygon) || (layer instanceof L.Circle);
+
+  function longestEdgeMetersFromGeom(geom) {
+    let longest = 0;
+    const processRing = (ring) => {
+      const n = ring.length;
+      if (n < 2) return;
+      for (let i = 0; i < n; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % n];
+        const km = turf.distance(a, b, { units: 'kilometers' });
+        const m = km * 1000;
+        if (m > longest) longest = m;
+      }
+    };
+    if (geom.type === 'Polygon') {
+      geom.coordinates.forEach(processRing);
+    } else if (geom.type === 'MultiPolygon') {
+      geom.coordinates.forEach(poly => poly.forEach(processRing));
+    }
+    return longest;
+  }
+
   function updateMetrics(layer){
     if(!layer || !isPolygonish(layer)){ mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; if(mLongest) mLongest.textContent='—'; return; }
     if(layer instanceof L.Circle){
@@ -357,7 +381,7 @@
   function updateModeLabel(){ rMode.textContent = elRM.value || '—'; }
   updateModeLabel(); elRM.addEventListener('change', updateModeLabel);
 
-  // ------ Helpers: snapping & cleaning ------
+  // Helpers: snapping & cleaning
   async function osrmNearest(lat,lon){
     try{
       const url = `https://router.project-osrm.org/nearest/v1/driving/${lon},${lat}`;
@@ -367,56 +391,34 @@
     }catch{}
     return { lat, lon };
   }
-
-  async function snapPointToRoad(p){
-    return await osrmNearest(p.lat, p.lon);
-  }
-
-  async function snapIfNeeded(obj){
-    const s = await snapPointToRoad(obj);
-    return { lat:s.lat, lon:s.lon, label: obj.label };
-  }
+  async function snapIfNeeded(obj){ const s=await osrmNearest(obj.lat,obj.lon); return { lat:s.lat, lon:s.lon, label: obj.label }; }
 
   function simplifyLine(coords, tolMeters=12){
     try{
-      const line = turf.lineString(coords.map(ll=>[ll[1], ll[0]])); // lon,lat
+      const line = turf.lineString(coords.map(ll=>[ll[1], ll[0]]));
       const simplified = turf.simplify(line, { tolerance: tolMeters/111320, highQuality: true });
       const out = simplified.geometry.coordinates.map(([lon,lat])=>[lat,lon]);
       return out.length >= 2 ? out : coords;
     }catch{ return coords; }
   }
-
   function scrubMicroDetours(coords){
-    // Remove tiny in-out loops like “turn into side street then back”.
-    // Criteria: A-B and B-C both short (< 35 m) AND angle at B is sharp (> 110°). Drop B.
     const maxShort = 35; const minAngle = 110;
     const dst = (a,b)=>turf.distance([a[1],a[0]],[b[1],b[0]],{units:'meters'});
     const angle = (a,b,c)=>{
       const v1=[a[0]-b[0], a[1]-b[1]], v2=[c[0]-b[0], c[1]-b[1]];
-      const dot=v1[0]*v2[0]+v1[1]*v2[1];
-      const m1=Math.hypot(v1[0],v1[1]), m2=Math.hypot(v2[0],v2[1]);
-      if(m1===0||m2===0) return 0;
-      const cos = Math.min(1, Math.max(-1, dot/(m1*m2)));
-      return Math.acos(cos)*180/Math.PI;
+      const dot=v1[0]*v2[0]+v1[1]*v2[1]; const m1=Math.hypot(v1[0],v1[1]), m2=Math.hypot(v2[0],v2[1]);
+      if(m1===0||m2===0) return 0; const cos = Math.min(1, Math.max(-1, dot/(m1*m2))); return Math.acos(cos)*180/Math.PI;
     };
-    let changed=true;
-    let pts=coords.slice();
+    let changed=true; let pts=coords.slice();
     while(changed){
       changed=false;
       const keep=[pts[0]];
       for(let i=1;i<pts.length-1;i++){
         const A=pts[i-1], B=pts[i], C=pts[i+1];
-        const ab=dst(A,B), bc=dst(B,C);
-        const ang=angle(A,B,C);
-        if (ab<maxShort && bc<maxShort && ang>minAngle){
-          // drop B
-          changed=true;
-        } else {
-          keep.push(B);
-        }
+        const ab=dst(A,B), bc=dst(B,C), ang=angle(A,B,C);
+        if (ab<maxShort && bc<maxShort && ang>minAngle){ changed=true; } else { keep.push(B); }
       }
-      keep.push(pts[pts.length-1]);
-      pts=keep;
+      keep.push(pts[pts.length-1]); pts=keep;
     }
     return pts;
   }
@@ -489,7 +491,7 @@
 
   function clearRoutes(){ routeState.polylines.forEach(pl=>routeLayer.removeLayer(pl)); routeState.labels.forEach(lb=>routeLayer.removeLayer(lb)); routeState.polylines=[]; routeState.labels=[]; routeState.meta=[]; routeState.activeIdx=-1; rList.innerHTML=''; }
 
-  // Build snapped synthetic detours
+  // Detours
   function detourOffsetsAdaptive(start,end,level){
     const distKm = turf.distance([start.lon,start.lat],[end.lon,end.lat], {units:'kilometers'});
     const base = Math.min(Math.max(distKm*0.08, 0.12), 1.2); // 120m..1200m
@@ -529,7 +531,6 @@
     if (!j||!j.routes) return [];
     return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
   }
-
   async function fetchGoogle(profile, start, end, vias, avoids){
     if (!window.google?.maps) return [];
     const svc = new google.maps.DirectionsService();
@@ -583,12 +584,13 @@
     const km=(meta.distance/1000).toFixed(2);
     const mins=Math.round(meta.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
 
+    const idx = routeState.polylines.length; // capture index BEFORE pushing
     const item=document.createElement('div'); item.className='route-item';
     item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
-      <div><b>${routeState.polylines.length+1}.</b> ${km} km • ${durTxt}
+      <div><b>${idx+1}.</b> ${km} km • ${durTxt}
       <span class="provider-tag">${meta.provider}</span></div>`;
-    item.onclick=()=>setActiveRoute(routeState.polylines.length);
-    poly.on('click',()=>setActiveRoute(routeState.polylines.length));
+    item.onclick=()=>setActiveRoute(idx);
+    poly.on('click',()=>setActiveRoute(idx));
 
     rList.appendChild(item);
     routeState.polylines.push(poly);
@@ -600,7 +602,7 @@
     try{
       if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
       if(!routeState.end){ const e=await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.'); setRoutePoint('end',e.lat,e.lon,e.label); }
-      // Snap start/end to roads before routing
+      // Snap start/end
       routeState.start = await snapIfNeeded(routeState.start);
       routeState.end   = await snapIfNeeded(routeState.end);
 
@@ -615,7 +617,7 @@
       if (chkAvoidTolls.checked) avoids.push('TOLLS');
       if (chkAvoidFerries.checked) avoids.push('FERRIES');
 
-      // Build via sets: manual + adaptive snapped detours
+      // Via sets: manual + adaptive snapped detours
       let synthetic = [];
       if (chkOdd.checked || selDetour.value!=='none'){
         synthetic = await buildDetourViasSnapped(start, end, selDetour.value);
@@ -638,9 +640,7 @@
           if (overallSeen.has(key)) continue;
           if (baselineDistance==null) baselineDistance = rt.distance;
           if (percentDiff(rt.distance, baselineDistance) < 0.02 && vias.length>0) continue;
-          // Guard: drop silly < 300 m routes
           if (rt.distance < 300) continue;
-
           overallSeen.add(key);
           addRouteToUI(coords, {provider:`OSRM ${vias.length?'('+vias.map(v=>v.label).join('+')+')':''}`, distance:rt.distance, duration:rt.duration}, paletteIndex++);
         }
@@ -657,7 +657,6 @@
             if (baselineDistance==null) baselineDistance = rt.distance;
             if (percentDiff(rt.distance, baselineDistance) < 0.02 && vias.length>0) continue;
             if (rt.distance < 300) continue;
-
             overallSeen.add(key);
             addRouteToUI(coords, {provider:`Google ${vias.length?'('+vias.map(v=>v.label).join('+')+')':''}`, distance:rt.distance, duration:rt.duration}, paletteIndex++);
           }
