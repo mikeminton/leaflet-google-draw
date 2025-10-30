@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Car Navigation — Road‑True Routing</title>
+  <title>Leaflet + Car Navigation — Road‑True Routing (Panels unified + Cul‑de‑sac fallback)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -63,6 +63,7 @@
 
     .metrics { min-width: 280px; max-width: 420px; flex: 0 1 auto; }
     .routebox { min-width: 380px; max-width: 860px; flex: 1 1 520px; }
+    .infobox { min-width: 280px; max-width: 360px; flex: 0 1 auto; }
 
     .btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer; }
 
@@ -73,9 +74,6 @@
 
     .via-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1px solid #ddd; border-radius:14px; margin-right:6px; }
     .via-chip button { border:none; background:transparent; cursor:pointer; }
-
-    /* Info panel bottom-right with +30px drop */
-    .info { position: absolute; z-index: 1300; right: 10px; bottom: 40px; min-width: 280px; max-width: 360px; transition: bottom .15s ease; }
 
     /* Street View */
     #sv-panel { position: absolute; z-index: 1450; right: 10px; bottom: 10px; width: 420px; height: 300px;
@@ -132,7 +130,7 @@
     <label title="Use Google Directions (more alternatives)"><input type="checkbox" id="use-google" checked> Use Google</label>
   </div>
 
-  <!-- Bottom dock -->
+  <!-- Bottom dock: METRICS + ROUTES + LOCATION now together -->
   <div class="bottom-dock" id="bottom-dock">
     <div class="card metrics" id="metrics">
       <h4>DRAWN POLYGON INFORMATION:</h4>
@@ -155,19 +153,16 @@
         <button id="btn-copy-selected" class="btn" title="Copy selected route coordinates">Copy Coords</button>
         <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
       </div>
-      <div class="row" style="opacity:.8">
-        Strict road geometry. Press <b>P</b> if you ever “lose” these panels.
-      </div>
+      <div class="row" style="opacity:.8">Strict road geometry. Press <b>P</b> to toggle these panels.</div>
     </div>
-  </div>
 
-  <!-- Info (bottom-right with +30) -->
-  <div class="card info" id="info">
-    <h4>LOCATION INFORMATION:</h4>
-    <div class="row">Postcode: <code id="postcode">—</code></div>
-    <div class="row">Lat/Lon: <code id="latlon">—</code></div>
-    <div class="row">Easting/Northing: <code id="en">—</code></div>
-    <div class="row" style="opacity:.8">Shift+Click: drop pin • Ctrl+Click: add via • Alt+Click: Street View • Right‑click: set Start/End</div>
+    <div class="card infobox" id="info">
+      <h4>LOCATION INFORMATION:</h4>
+      <div class="row">Postcode: <code id="postcode">—</code></div>
+      <div class="row">Lat/Lon: <code id="latlon">—</code></div>
+      <div class="row">Easting/Northing: <code id="en">—</code></div>
+      <div class="row" style="opacity:.8">Shift+Click: drop pin • Ctrl+Click: add via • Alt+Click: Street View • Right‑click: set Start/End</div>
+    </div>
   </div>
 
   <!-- Street View -->
@@ -231,7 +226,7 @@
 
   // Panels toggle
   const bottomDock = byId('bottom-dock');
-  byId('toggle-panels').onclick = () => { bottomDock.style.display = (bottomDock.style.display==='none' ? 'flex' : 'none'); placeInfoPanel(); };
+  byId('toggle-panels').onclick = () => { bottomDock.style.display = (bottomDock.style.display==='none' ? 'flex' : 'none'); };
   document.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='p') byId('toggle-panels').click(); });
 
   // Basemaps
@@ -244,7 +239,7 @@
   function blockEventsFor(selector) {
     document.querySelectorAll(selector).forEach(el => { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); });
   }
-  blockEventsFor('#ui-toolbar, #bottom-dock, #info, #sv-panel, .leaflet-control-container');
+  blockEventsFor('#ui-toolbar, #bottom-dock, #sv-panel, .leaflet-control-container');
 
   // Pin
   let pin = L.marker(centre).addTo(map).bindPopup("SY3 0NS").openPopup();
@@ -269,17 +264,7 @@
     L.control.layers({ "Esri Satellite": esriImagery, "OSM Streets": osmStreets }, { "Esri Labels (Hybrid)": esriLabels }, { collapsed: false }).addTo(map);
   }
 
-  // Info panel placement logic: stay above dock/SV and drop +30
-  const infoPanel = byId('info'), svPanel = byId('sv-panel');
-  function placeInfoPanel(){
-    const dock = bottomDock.style.display==='none' ? 0 : (bottomDock.getBoundingClientRect().height || 0);
-    const sv = svPanel.style.display==='none' ? 0 : (svPanel.getBoundingClientRect().height || 0);
-    const offset = Math.max(dock, sv);
-    infoPanel.style.bottom = (40 + offset) + 'px'; // +30 over previous base
-  }
-  window.addEventListener('resize', placeInfoPanel);
-
-  // Info panel plumbing
+  // Info panel plumbing (now in dock)
   const elPostcode = byId('postcode'), elLatLon = byId('latlon'), elEN = byId('en');
   function normalizeUKPostcode(str){ if(!str) return null; const s=str.toUpperCase().replace(/\s+/g,''); return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s)?s:null; }
   async function updateInfo(lat,lon){
@@ -336,7 +321,7 @@
   // Map clicks
   map.on('click', e=>{
     const t=e.originalEvent?.target;
-    if(t && t.closest && t.closest('.toolbar, #bottom-dock, .info, .leaflet-control, #sv-panel')) return;
+    if(t && t.closest && t.closest('.toolbar, #bottom-dock, .leaflet-control, #sv-panel')) return;
     if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
     if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
     if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
@@ -347,14 +332,14 @@
 
   // Street View
   let svService=null, panorama=null; const svTitle=byId('sv-title'), svBtnClose=byId('sv-close'), svBtnPop=byId('sv-popout');
-  function showSVPanel(show){ svPanel.style.display=show?'block':'none'; placeInfoPanel(); }
+  function showSVPanel(show){ svPanel.style.display=show?'block':'none'; }
   function ensureSV(){ if(!window.google||!google.maps) return false; if(!svService) svService=new google.maps.StreetViewService(); if(!panorama) panorama=new google.maps.StreetViewPanorama(byId('pano'),{addressControl:true,linksControl:true,panControl:true,zoomControl:true,fullscreenControl:true}); return true; }
   function openSVAt(lat,lon){ if(!ensureSV()) return alert('Google Maps API not ready'); const loc={lat,lng:lon}; svService.getPanorama({location:loc,radius:70},(data,status)=>{ if(status==='OK'&&data?.location){ panorama.setPano(data.location.pano); panorama.setPov({heading:0,pitch:0}); panorama.setVisible(true); svTitle.textContent='Street View'; svBtnPop.onclick=()=>window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`,'_blank','noopener'); showSVPanel(true);} else alert('No Street View here.'); }); }
   byId('btn-sv-center').addEventListener('click',()=>{ const c=map.getCenter(); openSVAt(c.lat,c.lng); });
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
   map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
 
-  // ---------- Routing (Car only) ----------
+  // ---------- Routing (Car, road-true, with cul-de-sac fallback) ----------
   const routeLayer=L.layerGroup().addTo(map);
   let startMarker=null, endMarker=null;
   const elRS=byId('route-start'), elRE=byId('route-end'), elUseGoogle=byId('use-google');
@@ -471,7 +456,6 @@
     });
   }
 
-  function percentDiff(a,b){ return b ? Math.abs(a-b)/b : 0; }
   function hashCoords(coords){ const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]); return JSON.stringify([rounded.length, rounded.slice(0,200)]); }
   function midpointLatLng(latlngs){ return latlngs[Math.floor(latlngs.length/2)]; }
   function makeNumberBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:`<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
@@ -527,6 +511,33 @@
     return null;
   }
 
+  // Nudge helpers (12 m along/against the S→E vector; then perpendicular)
+  function nudgeCandidates(start, end){
+    const dx=end.lon-start.lon, dy=end.lat-start.lat;
+    const len=Math.hypot(dx,dy)||1;
+    const ux=dx/len, uy=dy/len;
+    const step=12/111320; // ~12m in degrees lat; lon scaled by cos(lat) below
+    const scaleLon = (m, lat)=> (m/(111320*Math.cos((lat*Math.PI)/180)));
+    const along=[
+      { dlat: uy*step, dlon: scaleLon(12, start.lat)*ux },
+      { dlat:-uy*step, dlon:-scaleLon(12, start.lat)*ux }
+    ];
+    const perp=[
+      { dlat:-ux*step, dlon: scaleLon(12, start.lat)*uy },
+      { dlat: ux*step, dlon:-scaleLon(12, start.lat)*uy }
+    ];
+    return [along, perp];
+  }
+
+  async function tryPlan(start, end, vias, avoids){
+    // OSRM first
+    const osrm = await fetchOSRM(start, end, vias, avoids.includes('FERRIES'));
+    // Google too
+    let g=[]
+    if (elUseGoogle.checked) g = await fetchGoogle(start, end, vias, avoids.filter(a=>a!=='FERRIES'));
+    return [...osrm, ...g];
+  }
+
   async function planRoutes(){
     try{
       if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
@@ -538,45 +549,47 @@
       const {start,end}=routeState; if(!start||!end) return;
       clearRoutes();
 
-      const overallSeen = new Set();
-      let baselineDistance = null;
       const avoids=[];
       if (chkAvoidHwy.checked) avoids.push('HIGHWAYS');
       if (chkAvoidTolls.checked) avoids.push('TOLLS');
       if (chkAvoidFerries.checked) avoids.push('FERRIES');
 
-      let paletteIndex=0;
+      // Try plain
+      let routes = await tryPlan(start, end, routeState.vias, avoids);
 
-      // OSRM (car)
-      const osrmRoutes = await fetchOSRM(start, end, routeState.vias, chkAvoidFerries.checked);
-      for (const rt of osrmRoutes){
-        const coords = rt.coords; // exact
-        const key = hashCoords(coords);
-        if (overallSeen.has(key)) continue;
-        if (baselineDistance==null) baselineDistance = rt.distance;
-        if (rt.distance < 300) continue;
-        overallSeen.add(key);
-        addRouteToUI(coords, {provider:`OSRM`, distance:rt.distance, duration:rt.duration}, paletteIndex++);
-      }
-
-      // Google (car)
-      if (elUseGoogle.checked){
-        const gRoutes = await fetchGoogle(start, end, routeState.vias, avoids);
-        for (const rt of gRoutes){
-          const coords = rt.coords; // exact (step paths)
-          const key = hashCoords(coords);
-          if (overallSeen.has(key)) continue;
-          if (baselineDistance==null) baselineDistance = rt.distance;
-          if (rt.distance < 300) continue;
-          overallSeen.add(key);
-          addRouteToUI(coords, {provider:`Google`, distance:rt.distance, duration:rt.duration}, paletteIndex++);
+      // If nothing, try nudges (cul‑de‑sac / barrier rescue)
+      if (!routes.length){
+        const [along, perp] = nudgeCandidates(start, end);
+        // Pass 1: along ±12m
+        for (const a of along){
+          const s = await snapIfNeeded({lat:start.lat + a.dlat, lon:start.lon + a.dlon, label:start.label});
+          const e = await snapIfNeeded({lat:end.lat   - a.dlat, lon:end.lon   - a.dlon, label:end.label});
+          routes = await tryPlan(s, e, routeState.vias, avoids);
+          if (routes.length) break;
+        }
+        // Pass 2: perpendicular ±12m
+        if (!routes.length){
+          for (const p of perp){
+            const s = await snapIfNeeded({lat:start.lat + p.dlat, lon:start.lon + p.dlon, label:start.label});
+            const e = await snapIfNeeded({lat:end.lat   - p.dlat, lon:end.lon   - p.dlon, label:end.label});
+            routes = await tryPlan(s, e, routeState.vias, avoids);
+            if (routes.length) break;
+          }
         }
       }
 
-      if(routeState.polylines.length===0) alert('No routes. Check points or try adding a manual Via (Ctrl+Click).');
-      else setActiveRoute(0);
+      if (!routes.length){ alert('No routes. Add one manual Via (Ctrl+Click) near the open end and retry.'); return; }
+
+      // Render de‑duplicated
+      const seen = new Set(); let paletteIndex=0;
+      for (const rt of routes){
+        const key = JSON.stringify([Math.round(rt.distance), Math.round(rt.duration), rt.provider.slice(0,1)]);
+        if (seen.has(key)) continue; seen.add(key);
+        addRouteToUI(rt.coords, {provider:rt.provider, distance:rt.distance, duration:rt.duration}, paletteIndex++);
+      }
+      setActiveRoute(0);
     }catch(err){
-      console.error(err); alert('Routing failed. Check points and try again.');
+      console.error(err); alert('Routing failed. Check points and try again.'); 
     }
   }
 
@@ -595,8 +608,8 @@
   byId('btn-route').addEventListener('click', ()=>{ planRoutes(); });
   byId('btn-clear-route').addEventListener('click', ()=>{ clearRoutes(); });
 
-  // Initial placement and info
-  (async()=>{ await updateInfo(centre[0], centre[1]); placeInfoPanel(); })();
+  // Initial info
+  (async()=>{ await updateInfo(centre[0], centre[1]); })();
 </script>
 
 <noscript>Enable JavaScript to view the map.</noscript>
