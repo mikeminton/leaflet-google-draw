@@ -47,6 +47,11 @@
     .toolbar .spacer { width: 6px; flex: 0 0 auto; }
     .mini { width: 220px; }
 
+    /* Make Leaflet controls sit above toolbars/panels */
+    .leaflet-control { z-index: 1200 !important; }
+    /* Lower the base layers control below the toolbar */
+    .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 90px !important; }
+
     /* Pin info panel (bottom-right) */
     .info {
       position: absolute; z-index: 1000; right: 10px; bottom: 50px;
@@ -95,9 +100,6 @@
     @media (max-width: 900px) {
       .routebox { left: 10px; bottom: 10px; max-width: 360px; }  /* stack on small screens */
     }
-
-    /* Lower the base layers control */
-    .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 75px !important; }
 
     /* Defensive */
     .leaflet-control-geocoder { display: none !important; }
@@ -517,7 +519,7 @@
         const lengthKm = turf.length(outline, { units: 'kilometers' });
         const peri = lengthKm * 1000;
         mArea.textContent = `${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`;
-        mPerim.textContent = `${peri.toFixed(2)} m";
+        mPerim.textContent = `${peri.toFixed(2)} m`;
         if (mLongest) mLongest.textContent = `${longestEdgeMetersFromGeom(gj.geometry).toFixed(2)} m`;
       } else {
         mArea.textContent = mPerim.textContent = '—'; if (mLongest) mLongest.textContent='—';
