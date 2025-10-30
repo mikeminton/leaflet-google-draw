@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Google + Multi-Engine Routing (All Alternatives) — Fixed Click Selection</title>
+  <title>Leaflet + Google + OSRM — At Least 2 Routes per Provider</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -81,7 +81,7 @@
       position: absolute; z-index: 1000; left: 410px; bottom: 50px;
       background: #fff; border-radius: 10px; padding: 10px 12px;
       box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif;
-      min-width: 320px; max-width: 520px;
+      min-width: 340px; max-width: 560px;
     }
     .routebox h4 { margin: 0 0 6px 0; font-size: 14px; }
     .routebox .row { margin: 4px 0; }
@@ -166,7 +166,7 @@
       <button id="btn-use-selected" title="Add the selected route to drawings">Use Selected</button>
       <button id="btn-copy-selected" title="Copy selected route coordinates">Copy Coords</button>
     </div>
-    <div class="row" style="opacity:.8">Tip: click a route to highlight. Right‑click sets Start→End on map.</div>
+    <div class="row" style="opacity:.8">We ask each provider for multiple variants (base + avoids) and dedupe. Right‑click sets Start→End on map.</div>
   </div>
 
   <!-- Info -->
@@ -363,7 +363,7 @@
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
   map.on('click', e=>{ const t=e.originalEvent?.target; if(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel, #routebox')) return; if(e.originalEvent?.altKey) openSVAt(e.latlng.lat,e.latlng.lng); });
 
-  // Routing: OSRM + Google
+  // Routing: OSRM + Google (ensure >=2 per provider when possible)
   const routeLayer=L.layerGroup().addTo(map);
   let startMarker=null, endMarker=null;
   const elRS=byId('route-start'), elRE=byId('route-end'), elRM=byId('route-mode'), elUseGoogle=byId('use-google');
@@ -432,6 +432,65 @@
     return JSON.stringify([rounded.length, rounded.slice(0,200)]);
   }
 
+  async function fetchOSRMVariants(profile, start, end, minVariants=2, maxVariants=6){
+    const results = [];
+    const seen = new Set();
+    const url = (alts) => `https://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson&alternatives=${alts}&steps=false`;
+    try {
+      // Ask for many alternatives up-front; server will cap
+      const r = await fetch(url(maxVariants));
+      const j = await r.json();
+      const routes = (j.routes||[]).map(rt=>({ tag:'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
+      for (const rt of routes){
+        const h = hashCoords(rt.coords);
+        if (seen.has(h)) continue;
+        seen.add(h); results.push(rt);
+        if (results.length >= minVariants) break;
+      }
+    } catch {}
+    return results;
+  }
+
+  async function fetchGoogleVariants(profile, start, end, minVariants=2, maxVariants=6){
+    const variants = [{tag:'base'}, {tag:'avoid:tolls', avoid:['TOLLS']}, {tag:'avoid:highways', avoid:['HIGHWAYS']}, {tag:'avoid:ferries', avoid:['FERRIES']}, {tag:'avoid:tolls,highways', avoid:['TOLLS','HIGHWAYS']}, {tag:'avoid:tolls,ferries', avoid:['TOLLS','FERRIES']}];
+    const svc = new google.maps.DirectionsService();
+    const gMode = profile==='driving'?'DRIVING':profile==='walking'?'WALKING':'BICYCLING';
+    const results = []; const seen = new Set();
+
+    for (const v of variants){
+      if (results.length >= maxVariants) break;
+      const req = {
+        origin: {lat:start.lat, lng:start.lon},
+        destination: {lat:end.lat, lng:end.lon},
+        travelMode: gMode,
+        provideRouteAlternatives: true
+      };
+      if (v.avoid) req.avoid = v.avoid;
+      const routes = await new Promise((resolve)=>{
+        svc.route(req, (res,status)=>{
+          if(status!=='OK' || !res?.routes) return resolve([]);
+          resolve(res.routes.map(r=>{
+            const path = (r.overview_path || []).map(ll=>[ll.lat(), ll.lng()]);
+            const legs = r.legs && r.legs[0];
+            const distance = legs?.distance?.value || 0;
+            const duration = legs?.duration?.value || 0;
+            return { tag:v.tag, distance, duration, coords: path };
+          }));
+        });
+      });
+
+      for (const rt of routes){
+        const h = hashCoords(rt.coords);
+        if (seen.has(h)) continue;
+        seen.add(h); results.push(rt);
+        if (results.length >= minVariants) break;
+      }
+      if (results.length >= minVariants) break;
+    }
+    return results;
+  }
+
+  const routeLayer=L.layerGroup().addTo(map);
   async function planRoutes(){
     try{
       if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
@@ -440,72 +499,62 @@
       clearRoutes(); rMode.textContent = elRM.value || '—';
 
       const profile = elRM.value;
-      const requests = [];
-      const osrmUrl = `https://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson&alternatives=true&steps=false`;
-      requests.push(fetch(osrmUrl).then(r=>r.json()).then(j => ({ provider:'OSRM', routes:(j.routes||[]).map(rt=>({ distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) })) })).catch(()=>({provider:'OSRM', routes:[]})));
-
-      if (byId('use-google').checked && window.google?.maps) {
-        await google.maps.importLibrary('routes').catch(()=>{});
-        requests.push(new Promise((resolve)=>{
-          const svc = new google.maps.DirectionsService();
-          const gMode = profile==='driving'?'DRIVING':profile==='walking'?'WALKING':'BICYCLING';
-          svc.route({ origin:{lat:start.lat,lng:start.lon}, destination:{lat:end.lat,lng:end.lon}, travelMode:gMode, provideRouteAlternatives:true },
-            (res,status)=>{
-              if(status!=='OK' || !res?.routes) return resolve({provider:'Google', routes:[]});
-              const routes = res.routes.map(r=>{
-                const path = (r.overview_path || []).map(ll=>[ll.lat(), ll.lng()]);
-                const legs = r.legs && r.legs[0];
-                const distance = legs?.distance?.value || 0;
-                const duration = legs?.duration?.value || 0;
-                return { distance, duration, coords: path };
-              });
-              resolve({ provider:'Google', routes });
-          });
-        }));
-      }
-
-      const results = await Promise.all(requests);
-      const seen = new Set();
+      const palette = PALETTE.slice();
+      const overallSeen = new Set(); // global dedupe (across providers)
       let displayOrder = 0;
 
-      results.forEach(({provider, routes})=>{
-        routes.forEach(route=>{
-          if(!route.coords || route.coords.length<2) return;
-          const hash = hashCoords(route.coords);
-          if(seen.has(hash)) return;
-          seen.add(hash);
+      // OSRM first
+      const osrmRoutes = await fetchOSRMVariants(profile, start, end, 2, 6);
+      osrmRoutes.forEach(rt=>{
+        const h = hashCoords(rt.coords); if (overallSeen.has(h)) return; overallSeen.add(h);
+        const idx = routeState.polylines.length;
+        const color = palette[idx % palette.length];
+        const poly = L.polyline(rt.coords, {color, weight:4, opacity:0.7}).addTo(routeLayer);
+        routeState.polylines.push(poly);
+        const mid = midpointLatLng(rt.coords);
+        const badge = makeNumberBadge(++displayOrder, color, mid).addTo(routeLayer);
+        routeState.labels.push(badge);
+        routeState.meta.push({provider:`OSRM (${rt.tag})`, distance:rt.distance, duration:rt.duration, color});
 
-          // Stable index BEFORE push
-          const idx = routeState.polylines.length;
-          const color = PALETTE[idx % PALETTE.length];
-
-          const poly = L.polyline(route.coords, {color, weight:4, opacity:0.7}).addTo(routeLayer);
-          routeState.polylines.push(poly);
-
-          const mid = midpointLatLng(route.coords);
-          const badge = makeNumberBadge(++displayOrder, color, mid).addTo(routeLayer);
-          routeState.labels.push(badge);
-          routeState.meta.push({provider, distance:route.distance, duration:route.duration, color});
-
-          const km=(route.distance/1000).toFixed(2);
-          const mins=Math.round(route.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
-
-          const item=document.createElement('div');
-          item.className='route-item';
-          item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
-            <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">${provider}</span></div>`;
-
-          item.onclick = () => setActiveRoute(idx);
-          poly.on('click', () => setActiveRoute(idx));
-
-          rList.appendChild(item);
-        });
+        const km=(rt.distance/1000).toFixed(2);
+        const mins=Math.round(rt.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
+        const item=document.createElement('div'); item.className='route-item';
+        item.innerHTML = `<div class="route-swatch" style="background:${color}"></div>
+                          <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">OSRM</span> <span class="provider-tag">${rt.tag}</span></div>`;
+        item.onclick = () => setActiveRoute(idx);
+        poly.on('click', () => setActiveRoute(idx));
+        rList.appendChild(item);
       });
 
-      if(routeState.polylines.length===0) alert('No routes found from any provider.');
+      // Google next (if enabled)
+      if (elUseGoogle.checked && window.google?.maps){
+        const gRoutes = await fetchGoogleVariants(profile, start, end, 2, 6);
+        gRoutes.forEach(rt=>{
+          const h = hashCoords(rt.coords); if (overallSeen.has(h)) return; overallSeen.add(h);
+          const idx = routeState.polylines.length;
+          const color = palette[idx % palette.length];
+          const poly = L.polyline(rt.coords, {color, weight:4, opacity:0.7}).addTo(routeLayer);
+          routeState.polylines.push(poly);
+          const mid = midpointLatLng(rt.coords);
+          const badge = makeNumberBadge(++displayOrder, color, mid).addTo(routeLayer);
+          routeState.labels.push(badge);
+          routeState.meta.push({provider:`Google (${rt.tag})`, distance:rt.distance, duration:rt.duration, color});
+
+          const km=(rt.distance/1000).toFixed(2);
+          const mins=Math.round(rt.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
+          const item=document.createElement('div'); item.className='route-item';
+          item.innerHTML = `<div class="route-swatch" style="background:${color}"></div>
+                            <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">Google</span> <span class="provider-tag">${rt.tag}</span></div>`;
+          item.onclick = () => setActiveRoute(idx);
+          poly.on('click', () => setActiveRoute(idx));
+          rList.appendChild(item);
+        });
+      }
+
+      if(routeState.polylines.length===0) alert('No routes found.');
       else setActiveRoute(0);
     }catch(err){
-      console.error(err); alert('Routing failed. Check points and try again.');
+      console.error(err); alert('Routing failed. Check points, then try again.');
     }
   }
 
