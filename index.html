@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Multi‑Engine Routing — Forced Alternatives (Avoids + Detour Vias)</title>
+  <title>Leaflet + Multi‑Engine Routing — Clean Alternates (No Car‑park Wiggles)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -51,21 +51,25 @@
     .leaflet-control { z-index: 1200 !important; }
     .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 120px !important; }
 
-    /* Info (BR) */
-    .info, .metrics, .routebox { background: #fff; border-radius: 10px; padding: 10px 12px;
+    /* Cards */
+    .card { background: #fff; border-radius: 10px; padding: 10px 12px;
       box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif; }
-    .info { position: absolute; z-index: 1000; right: 10px; bottom: 50px; min-width: 280px; max-width: 360px; }
-    .metrics { position: absolute; z-index: 1000; left: 10px; bottom: 50px; min-width: 260px; max-width: 380px; }
-    .routebox { position: absolute; z-index: 1000; left: 410px; bottom: 50px; min-width: 380px; max-width: 620px; }
-
-    .info h4, .metrics h4, .routebox h4 { margin: 0 0 6px 0; font-size: 14px; }
+    .card h4 { margin: 0 0 6px 0; font-size: 14px; }
     .row { margin: 4px 0; }
     code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
 
-    .metrics .btn, .routebox button {
-      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer;
+    /* Info */
+    .info { position: absolute; z-index: 1000; right: 10px; bottom: 50px; min-width: 280px; max-width: 360px; }
+
+    /* Bottom dock with metrics + routes */
+    .bottom-dock {
+      position: absolute; z-index: 1000; left: 10px; right: 10px; bottom: 10px;
+      display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap;
     }
-    .metrics .btn + .btn { margin-left: 6px; }
+    .metrics { min-width: 260px; max-width: 420px; flex: 0 1 auto; }
+    .routebox { min-width: 360px; max-width: 840px; flex: 1 1 520px; }
+
+    .btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer; }
 
     .route-item { display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid #eee; border-radius:8px; margin:6px 0; cursor:pointer; }
     .route-swatch { width:14px; height:14px; border-radius:3px; border:1px solid #bbb; }
@@ -74,8 +78,6 @@
 
     .via-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1px solid #ddd; border-radius:14px; margin-right:6px; }
     .via-chip button { border:none; background:transparent; cursor:pointer; }
-
-    @media (max-width: 1100px) { .routebox { left: 10px; bottom: 10px; max-width: 360px; } }
 
     /* Street View panel */
     #sv-panel { position: absolute; z-index: 1100; right: 10px; bottom: 10px; width: 420px; height: 300px;
@@ -124,7 +126,7 @@
       <option value="walking">Walking</option>
       <option value="cycling">Cycling</option>
     </select>
-    <label title="Prefer unusual paths"><input type="checkbox" id="prefer-odd"> Explore off‑beat</label>
+    <label title="Prefer unusual paths"><input type="checkbox" id="prefer-odd" checked> Explore off‑beat</label>
     <label title="Avoid motorways (Google only)"><input type="checkbox" id="avoid-hwy"> Avoid highways</label>
     <label title="Avoid tolls (Google only)"><input type="checkbox" id="avoid-tolls"> Avoid tolls</label>
     <label title="Avoid ferries"><input type="checkbox" id="avoid-ferries"> Avoid ferries</label>
@@ -142,24 +144,38 @@
     <label title="Use Google Directions (more alternatives)"><input type="checkbox" id="use-google" checked> Use Google</label>
   </div>
 
-  <!-- Routes panel -->
-  <div class="routebox" id="routebox">
-    <h4>ROUTES:</h4>
-    <div class="row">Mode: <code id="r-mode">—</code></div>
-    <div class="row">Vias (Ctrl+Click to add): <span id="vias"></span> <button id="clear-vias">Clear vias</button></div>
-    <div id="r-list" class="row"></div>
-    <div class="row" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
-      <button id="btn-use-selected" title="Add the selected route to drawings">Use Selected</button>
-      <button id="btn-copy-selected" title="Copy selected route coordinates">Copy Coords</button>
-      <button id="btn-zoom-all" title="Zoom to all routes">Zoom All</button>
+  <!-- Bottom dock: Metrics + Routes side by side -->
+  <div class="bottom-dock" id="bottom-dock">
+    <div class="card metrics" id="metrics">
+      <h4>DRAWN POLYGON INFORMATION:</h4>
+      <div class="row">Type: <code id="m-type">—</code></div>
+      <div class="row">Area: <code id="m-area">—</code></div>
+      <div class="row">Perimeter: <code id="m-perim">—</code></div>
+      <div class="row">Longest edge: <code id="m-longest">—</code></div>
+      <div class="row" style="margin-top:8px;">
+        <button id="btn-copy" class="btn">Copy Coords</button>
+        <button id="btn-center-shape" class="btn">Center on Shape</button>
+      </div>
     </div>
-    <div class="row" style="opacity:.8">
-      Tip: if providers return only one option, toggle <b>Explore off‑beat</b> and raise <b>Detour</b> level.
+
+    <div class="card routebox" id="routebox">
+      <h4>ROUTES:</h4>
+      <div class="row">Mode: <code id="r-mode">—</code></div>
+      <div class="row">Vias (Ctrl+Click to add): <span id="vias"></span> <button id="clear-vias" class="btn">Clear vias</button></div>
+      <div id="r-list" class="row"></div>
+      <div class="row" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+        <button id="btn-use-selected" class="btn" title="Add the selected route to drawings">Use Selected</button>
+        <button id="btn-copy-selected" class="btn" title="Copy selected route coordinates">Copy Coords</button>
+        <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
+      </div>
+      <div class="row" style="opacity:.8">
+        Routes are snapped to roads and simplified to avoid micro‑detours. We drop alternatives that are effectively the same (&lt;2% distance difference).
+      </div>
     </div>
   </div>
 
   <!-- Info -->
-  <div class="info" id="info">
+  <div class="card info" id="info">
     <h4>LOCATION INFORMATION:</h4>
     <div class="row">Postcode: <code id="postcode">—</code></div>
     <div class="row">Lat/Lon: <code id="latlon">—</code></div>
@@ -236,7 +252,7 @@
   function blockEventsFor(selector) {
     document.querySelectorAll(selector).forEach(el => { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); });
   }
-  blockEventsFor('#ui-toolbar, #metrics, #info, #sv-panel, #routebox');
+  blockEventsFor('#ui-toolbar, #bottom-dock, #info, #sv-panel');
   blockEventsFor('.leaflet-control-container');
 
   // Pin
@@ -274,7 +290,7 @@
   }
   function setPin(lat,lon,recenter=false){ if(!isNum(lat)||!isNum(lon)) return; pin.setLatLng([lat,lon]).addTo(map).openPopup(); if(recenter) map.setView([lat,lon], Math.max(map.getZoom(),18)); updateInfo(lat,lon); }
 
-  // Drawing & metrics (unchanged core)
+  // Drawing & metrics
   const defaultStyle={color:"#00AEEF",weight:2,fillOpacity:0.18}, activeStyle={color:"#007ACC",weight:2,fillOpacity:0.20};
   map.pm.setGlobalOptions({ snappable:true, snapDistance:20, allowSelfIntersection:false, continueDrawing:false, finishOn:'dblclick' });
   map.pm.addControls({ position:"topleft", drawMarker:true, drawPolyline:true, drawRectangle:true, drawPolygon:true, drawCircle:true, drawCircleMarker:true, editMode:true, dragMode:true, cutPolygon:true, removalMode:true });
@@ -302,7 +318,7 @@
   // Simple map click behaviours
   map.on('click', e=>{
     const t=e.originalEvent?.target;
-    if(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel, #routebox')) return;
+    if(t && t.closest && t.closest('.toolbar, #bottom-dock, .info, .leaflet-control, #sv-panel')) return;
     if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
     if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
     if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
@@ -321,7 +337,6 @@
   function openSVAt(lat,lon){ if(!ensureSV()) return alert('Google Maps API not ready'); const loc={lat,lng:lon}; svService.getPanorama({location:loc,radius:70},(data,status)=>{ if(status==='OK'&&data?.location){ panorama.setPano(data.location.pano); panorama.setPov({heading:0,pitch:0}); panorama.setVisible(true); svTitle.textContent='Street View'; svBtnPop.onclick=()=>window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`,'_blank','noopener'); showSVPanel(true);} else alert('No Street View here.'); }); }
   byId('btn-sv-center').addEventListener('click',()=>{ const c=map.getCenter(); openSVAt(c.lat,c.lng); });
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
-  map.on('click', e=>{ const t=e.originalEvent?.target; if(t && t.closest && t.closest('.toolbar, .metrics, .info, .leaflet-control, #sv-panel, #routebox')) return; if(e.originalEvent?.altKey) openSVAt(e.latlng.lat,e.latlng.lng); });
   map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
 
   // Routing State + UI
@@ -383,7 +398,48 @@
   btnSwap    .addEventListener('click',()=>{ const a=routeState.start, b=routeState.end; routeState.start=b; routeState.end=a; const tmp=elRS.value; elRS.value=elRE.value; elRE.value=tmp; if(startMarker&&b) startMarker.setLatLng([b.lat,b.lon]); if(endMarker&&a) endMarker.setLatLng([a.lat,a.lon]); });
 
   function clearRoutes(){ routeState.polylines.forEach(pl=>routeLayer.removeLayer(pl)); routeState.labels.forEach(lb=>routeLayer.removeLayer(lb)); routeState.polylines=[]; routeState.labels=[]; routeState.meta=[]; routeState.activeIdx=-1; rList.innerHTML=''; }
-  btnClearRt.addEventListener('click', clearRoutes);
+
+  // --- Snapping helpers ---
+  async function snapToRoadOSRM(lat,lon){
+    try{
+      const url = `https://router.project-osrm.org/nearest/v1/driving/${lon},${lat}`;
+      const j = await fetch(url).then(r=>r.json());
+      const loc = j?.waypoints?.[0]?.location;
+      if (Array.isArray(loc) && loc.length===2) return { lat: loc[1], lon: loc[0] };
+    }catch{}
+    return { lat, lon };
+  }
+
+  // --- Geometry cleaning helpers ---
+  function simplifyLine(coords, tolMeters=5){
+    try{
+      const line = turf.lineString(coords.map(ll=>[ll[1], ll[0]])); // to [lon,lat]
+      const simplified = turf.simplify(line, { tolerance: tolMeters/111320, highQuality: true }); // ~m to degrees
+      const out = simplified.geometry.coordinates.map(([lon,lat])=>[lat,lon]);
+      return out.length >= 2 ? out : coords;
+    }catch{ return coords; }
+  }
+
+  function percentDiff(a,b){ return b ? Math.abs(a-b)/b : 0; }
+
+  // --- Providers ---
+  function hashCoords(coords){
+    const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]);
+    return JSON.stringify([rounded.length, rounded.slice(0,200)]);
+  }
+  function midpointLatLng(latlngs){ return latlngs[Math.floor(latlngs.length/2)]; }
+  function makeNumberBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:`<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
+
+  function setActiveRoute(idx){
+    routeState.activeIdx=idx;
+    routeState.polylines.forEach((pl,i)=>{
+      pl.setStyle({weight: i===idx?6:4, opacity: i===idx?0.95:0.6, dashArray: i===idx?null:'6,6'});
+      if (i===idx && pl.bringToFront) pl.bringToFront();
+    });
+    const items = Array.from(rList.querySelectorAll('.route-item'));
+    items.forEach((el,i)=> el.classList.toggle('active', i===idx));
+    if(idx>=0 && routeState.polylines[idx]) map.fitBounds(routeState.polylines[idx].getBounds(), {padding:[30,30]});
+  }
 
   async function resolvePoint(text){
     const raw=(text||'').trim(); if(!raw) return null;
@@ -403,33 +459,17 @@
     return null;
   }
 
-  function midpointLatLng(latlngs){ return latlngs[Math.floor(latlngs.length/2)]; }
-  function makeNumberBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:`<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
-
-  function setActiveRoute(idx){
-    routeState.activeIdx=idx;
-    routeState.polylines.forEach((pl,i)=>{
-      pl.setStyle({weight: i===idx?6:4, opacity: i===idx?0.95:0.6, dashArray: i===idx?null:'6,6'});
-      if (i===idx && pl.bringToFront) pl.bringToFront();
-    });
-    const items = Array.from(rList.querySelectorAll('.route-item'));
-    items.forEach((el,i)=> el.classList.toggle('active', i===idx));
-    if(idx>=0 && routeState.polylines[idx]) map.fitBounds(routeState.polylines[idx].getBounds(), {padding:[30,30]});
-  }
-
-  function hashCoords(coords){
-    const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]);
-    return JSON.stringify([rounded.length, rounded.slice(0,200)]);
-  }
-
-  function detourOffsets(level){
+  function detourOffsetsAdaptive(start,end,level){
+    const distKm = turf.distance([start.lon,start.lat],[end.lon,end.lat], {units:'kilometers'});
+    const base = Math.min(Math.max(distKm*0.08, 0.12), 1.2); // 8% of beeline, clamp 120m..1200m
+    const m = base * 1000;
     if(level==='none') return [];
-    if(level==='light') return [150, -150];
-    if(level==='medium') return [200, -200, 450, -450];
-    return [250, -250, 600, -600, 1000, -1000]; // heavy
+    if(level==='light') return [ m*0.6, -m*0.6 ];
+    if(level==='medium') return [ m*0.8, -m*0.8, m*1.4, -m*1.4 ];
+    return [ m*0.9, -m*0.9, m*1.7, -m*1.7, m*2.3, -m*2.3 ];
   }
 
-  function buildDetourVias(start, end, level){
+  async function buildDetourViasSnapped(start, end, level){
     const mids = [];
     try{
       const startPt = turf.point([start.lon, start.lat]);
@@ -437,23 +477,58 @@
       const mid = turf.midpoint(startPt, endPt);
       const bearing = turf.bearing(startPt, endPt);
       const perp1 = bearing + 90;
-      const offs = detourOffsets(level);
-      offs.forEach(m => {
+      const offs = detourOffsetsAdaptive(start,end,level);
+      for (const m of offs){
         const via = turf.destination(mid, Math.abs(m)/1000, m>0?perp1:perp1-180, {units:'kilometers'});
-        const [lon, lat] = via.geometry.coordinates;
-        mids.push({lat, lon, label: m>0?`via-R${Math.abs(m)}`:`via-L${Math.abs(m)}`});
-      });
+        let [lon, lat] = via.geometry.coordinates;
+        // Snap to nearest road to avoid car-park detours
+        const snapped = await snapToRoadOSRM(lat, lon);
+        mids.push({lat: snapped.lat, lon: snapped.lon, label: m>0?`via-R${Math.round(Math.abs(m))}`:`via-L${Math.round(Math.abs(m))}`});
+      }
     }catch{}
     return mids;
   }
 
-  btnZoomAll.addEventListener('click',()=>{
-    const groups = routeState.polylines.filter(Boolean);
-    if(!groups.length) return;
-    let bounds = groups[0].getBounds();
-    groups.slice(1).forEach(pl => bounds = bounds.extend(pl.getBounds()));
-    map.fitBounds(bounds, {padding:[30,30]});
-  });
+  // Providers
+  async function fetchOSRM(profile, start, end, vias, avoidFerries){
+    const coords = [[start.lon,start.lat], ...vias.map(v=>[v.lon,v.lat]), [end.lon,end.lat]]
+      .map(pair=>pair.join(',')).join(';');
+    const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'true', steps:'false' });
+    if (avoidFerries) params.set('exclude','ferry');
+    const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?${params}`;
+    const j = await fetch(url).then(r=>r.json()).catch(()=>null);
+    if (!j||!j.routes) return [];
+    return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
+  }
+
+  async function fetchGoogle(profile, start, end, vias, avoids){
+    if (!window.google?.maps) return [];
+    const svc = new google.maps.DirectionsService();
+    const gMode = profile==='driving'?'DRIVING':profile==='walking'?'WALKING':'BICYCLING';
+    const req = {
+      origin: {lat:start.lat, lng:start.lon},
+      destination: {lat:end.lat, lng:end.lon},
+      travelMode: gMode,
+      provideRouteAlternatives: true
+    };
+    if (vias && vias.length){
+      req.waypoints = vias.map(v=>({ location:{lat:v.lat, lng:v.lon}, stopover:false }));
+    }
+    if (avoids.length) req.avoid = avoids;
+    const res = await new Promise(resolve => svc.route(req,(r,st)=>resolve(st==='OK'?r:null)));
+    if (!res?.routes) return [];
+    return res.routes.map(r=>{
+      const path = (r.overview_path||[]).map(ll=>[ll.lat(), ll.lng()]);
+      const legs = r.legs && r.legs[0];
+      const distance = legs?.distance?.value || 0;
+      const duration = legs?.duration?.value || 0;
+      return { provider:'Google', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance, duration, coords: path };
+    });
+  }
+
+  const routeLayer=L.layerGroup().addTo(map);
+  const rList=byId('r-list');
+  const rMode=byId('r-mode');
 
   async function planRoutes(){
     try{
@@ -467,74 +542,42 @@
       const overallSeen = new Set();
       let displayOrder = 0;
 
-      // Assemble vias: user‑added + synthetic detours if "Explore off‑beat" or detour level set
+      // Assemble vias: user‑added + snapped synthetic detours if enabled
       let synthetic = [];
       if (chkOdd.checked || selDetour.value!=='none'){
-        synthetic = buildDetourVias(start, end, selDetour.value);
+        synthetic = await buildDetourViasSnapped(start, end, selDetour.value);
       }
       const allViaSets = [];
-      // Each set is a list of vias to apply in order (Google uses waypoints; OSRM appends coord sequence)
       if (routeState.vias.length) allViaSets.push(routeState.vias);
-      synthetic.forEach(v => allViaSets.push([v])); // single‑via pushes
+      synthetic.forEach(v => allViaSets.push([v]));
+      allViaSets.unshift([]); // baseline first
 
-      // Always include the "no via" baseline set first
-      allViaSets.unshift([]);
+      // We'll record the first distance as baseline for pruning near-duplicates
+      let baselineDistance = null;
 
-      // ---- OSRM ----
-      async function fetchOSRM(profile, start, end, vias, avoidFerries){
-        const coords = [[start.lon,start.lat], ...vias.map(v=>[v.lon,v.lat]), [end.lon,end.lat]]
-          .map(pair=>pair.join(',')).join(';');
-        const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'true', steps:'false' });
-        if (avoidFerries) params.set('exclude','ferry'); // supported on demo server
-        const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?${params}`;
-        const j = await fetch(url).then(r=>r.json()).catch(()=>null);
-        if (!j||!j.routes) return [];
-        return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
-      }
-
-      // ---- Google ----
-      async function fetchGoogle(profile, start, end, vias, avoids){
-        if (!window.google?.maps) return [];
-        const svc = new google.maps.DirectionsService();
-        const gMode = profile==='driving'?'DRIVING':profile==='walking'?'WALKING':'BICYCLING';
-        const req = {
-          origin: {lat:start.lat, lng:start.lon},
-          destination: {lat:end.lat, lng:end.lon},
-          travelMode: gMode,
-          provideRouteAlternatives: true
-        };
-        if (vias && vias.length){
-          req.waypoints = vias.map(v=>({ location:{lat:v.lat, lng:v.lon}, stopover:false }));
-        }
-        if (avoids.length) req.avoid = avoids;
-        const res = await new Promise(resolve => svc.route(req,(r,st)=>resolve(st==='OK'?r:null)));
-        if (!res?.routes) return [];
-        return res.routes.map(r=>{
-          const path = (r.overview_path||[]).map(ll=>[ll.lat(), ll.lng()]);
-          const legs = r.legs && r.legs[0];
-          const distance = legs?.distance?.value || 0;
-          const duration = legs?.duration?.value || 0;
-          return { provider:'Google', tag: vias.length?vias.map(v=>v.label).join('+')||'via':'base', distance, duration, coords: path };
-        });
-      }
-
-      // Collect across via sets and avoids
       for (const vias of allViaSets){
         // OSRM
         const osrmRoutes = await fetchOSRM(profile, start, end, vias, chkAvoidFerries.checked);
-        osrmRoutes.forEach(rt=>{
-          const h=hashCoords(rt.coords); if (overallSeen.has(h)) return; overallSeen.add(h);
+        for (const rt of osrmRoutes){
+          let coords = simplifyLine(rt.coords, 5);
+          const h=hashCoords(coords); if (overallSeen.has(h)) continue;
+          if (baselineDistance==null) baselineDistance = rt.distance;
+          // prune nearly identical (distance within 2%)
+          if (percentDiff(rt.distance, baselineDistance) < 0.02 && vias.length>0) continue;
+
+          overallSeen.add(h);
           const idx=routeState.polylines.length; const color=palette[idx % palette.length];
-          const poly=L.polyline(rt.coords,{color,weight:4,opacity:0.7}).addTo(routeLayer);
+          const poly=L.polyline(coords,{color,weight:4,opacity:0.8}).addTo(routeLayer);
           routeState.polylines.push(poly);
-          const mid=midpointLatLng(rt.coords); const badge=makeNumberBadge(++displayOrder,color,mid).addTo(routeLayer);
+          const mid=midpointLatLng(coords); const badge=makeNumberBadge(++displayOrder,color,mid).addTo(routeLayer);
           routeState.labels.push(badge); routeState.meta.push({provider:`OSRM (${rt.tag||'base'})`, distance:rt.distance, duration:rt.duration, color});
+
           const km=(rt.distance/1000).toFixed(2); const mins=Math.round(rt.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
           const item=document.createElement('div'); item.className='route-item';
           item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
             <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">OSRM</span> ${rt.tag&&rt.tag!=='base'?`<span class="provider-tag">${rt.tag}</span>`:''}</div>`;
           item.onclick=()=>setActiveRoute(idx); poly.on('click',()=>setActiveRoute(idx)); rList.appendChild(item);
-        });
+        }
 
         // Google
         if (elUseGoogle.checked){
@@ -543,35 +586,49 @@
           if (chkAvoidTolls.checked) avoids.push('TOLLS');
           if (chkAvoidFerries.checked) avoids.push('FERRIES');
           const gRoutes = await fetchGoogle(profile, start, end, vias, avoids);
-          gRoutes.forEach(rt=>{
-            const h=hashCoords(rt.coords); if (overallSeen.has(h)) return; overallSeen.add(h);
+          for (const rt of gRoutes){
+            let coords = simplifyLine(rt.coords, 5);
+            const h=hashCoords(coords); if (overallSeen.has(h)) continue;
+            if (baselineDistance==null) baselineDistance = rt.distance;
+            if (percentDiff(rt.distance, baselineDistance) < 0.02 && vias.length>0) continue;
+
+            overallSeen.add(h);
             const idx=routeState.polylines.length; const color=palette[idx % palette.length];
-            const poly=L.polyline(rt.coords,{color,weight:4,opacity:0.7}).addTo(routeLayer);
+            const poly=L.polyline(coords,{color,weight:4,opacity:0.8}).addTo(routeLayer);
             routeState.polylines.push(poly);
-            const mid=midpointLatLng(rt.coords); const badge=makeNumberBadge(++displayOrder,color,mid).addTo(routeLayer);
+            const mid=midpointLatLng(coords); const badge=makeNumberBadge(++displayOrder,color,mid).addTo(routeLayer);
             routeState.labels.push(badge); routeState.meta.push({provider:`Google (${rt.tag||'base'})`, distance:rt.distance, duration:rt.duration, color});
+
             const km=(rt.distance/1000).toFixed(2); const mins=Math.round(rt.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
             const item=document.createElement('div'); item.className='route-item';
             item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
               <div><b>${displayOrder}.</b> ${km} km • ${durTxt} <span class="provider-tag">Google</span> ${rt.tag&&rt.tag!=='base'?`<span class="provider-tag">${rt.tag}</span>`:''} ${avoids.length?`<span class="provider-tag">avoid:${avoids.join(',').toLowerCase()}</span>`:''}</div>`;
             item.onclick=()=>setActiveRoute(idx); poly.on('click',()=>setActiveRoute(idx)); rList.appendChild(item);
-          });
+          }
         }
       }
 
-      if(routeState.polylines.length===0) alert('No routes found. Try adding a via (Ctrl+Click) or increasing Detour.');
+      if(routeState.polylines.length===0) alert('No clean alternatives. Try adding a manual Via (Ctrl+Click) or increasing Detour.');
       else setActiveRoute(0);
     }catch(err){
       console.error(err); alert('Routing failed. Check points and try again.');
     }
   }
 
-  btnRoute.addEventListener('click', planRoutes);
+  byId('btn-route').addEventListener('click', planRoutes);
+  byId('btn-clear-route').addEventListener('click', clearRoutes);
 
   // Use / Copy selected route
   function getActiveRouteCoords(){ const idx=routeState.activeIdx; if(idx==null||idx<0) return null; const pl=routeState.polylines[idx]; if(!pl) return null; const latlngs=pl.getLatLngs(); return Array.isArray(latlngs[0])?latlngs.flat():latlngs; }
   byId('btn-use-selected').addEventListener('click',()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const poly=L.polyline(pts,{color:'#007ACC',weight:3,opacity:0.95}).addTo(map); if(poly.pm&&poly.pm.enable) poly.pm.enable({snappable:true,snapDistance:20}); });
   byId('btn-copy-selected').addEventListener('click', async ()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const coords=pts.map(ll=>[ll.lng,ll.lat]); const text=JSON.stringify(coords); if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(text); else { const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.top='-9999px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); ta.remove(); } });
+  byId('btn-zoom-all').addEventListener('click',()=>{
+    const groups = routeState.polylines.filter(Boolean);
+    if(!groups.length) return;
+    let bounds = groups[0].getBounds();
+    groups.slice(1).forEach(pl => bounds = bounds.extend(pl.getBounds()));
+    map.fitBounds(bounds, {padding:[30,30]});
+  });
 
   // Init
   (async()=>{ await updateInfo(centre[0], centre[1]); })();
