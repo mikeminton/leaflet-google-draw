@@ -208,14 +208,14 @@
   if (savedKey) { inject(savedKey); return; }
   const ui = document.createElement('div');
   ui.style.cssText = 'position:fixed;z-index:2000;left:50%;top:12px;transform:translateX(-50%);background:#fff;padding:10px 12px;border:1px solid #ddd;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:13px system-ui';
-  ui.innerHTML = 
+  ui.innerHTML = `
     <b>Google Maps API key needed</b>
     <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
       <input id="gmaps-key-input" type="password" placeholder="Paste key…" style="width:280px;padding:6px 8px;border:1px solid #ccc;border-radius:8px;">
       <button id="gmaps-key-save" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#f7f7f7;cursor:pointer;">Save</button>
       <button id="gmaps-key-cancel" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;">Dismiss</button>
     </div>
-    <div style="margin-top:6px;opacity:.75">Or use <code>?gmaps=YOUR_KEY</code>. Stored only in this browser.</div>;
+    <div style="margin-top:6px;opacity:.75">Or use <code>?gmaps=YOUR_KEY</code>. Stored only in this browser.</div>`;
   document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(ui);
     document.getElementById('gmaps-key-save')?.addEventListener('click', () => {
@@ -282,9 +282,9 @@
   function normalizeUKPostcode(str){ if(!str) return null; const s=str.toUpperCase().replace(/\s+/g,''); return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s)?s:null; }
   async function updateInfo(lat,lon){
     const latStr=lat.toFixed(6), lonStr=lon.toFixed(6);
-    elLatLon.textContent=${latStr}, ${lonStr};
-    const [E,N]=proj4(WGS84,OSGB,[lon,lat]); elEN.textContent=${Math.round(E)}, ${Math.round(N)};
-    let pc='—'; try{ const pr=await fetch(https://api.postcodes.io/postcodes?lon=${lonStr}&lat=${latStr}&limit=1); const pj=await pr.json(); pc=pj?.result?.[0]?.postcode||'—'; }catch{}
+    elLatLon.textContent=`${latStr}, ${lonStr}`;
+    const [E,N]=proj4(WGS84,OSGB,[lon,lat]); elEN.textContent=`${Math.round(E)}, ${Math.round(N)}`;
+    let pc='—'; try{ const pr=await fetch(`https://api.postcodes.io/postcodes?lon=${lonStr}&lat=${latStr}&limit=1`); const pj=await pr.json(); pc=pj?.result?.[0]?.postcode||'—'; }catch{}
     elPostcode.textContent=pc; pin.setPopupContent(pc);
   }
   function setPin(lat,lon,recenter=false){ if(!isNum(lat)||!isNum(lon)) return; pin.setLatLng([lat,lon]).addTo(map).openPopup(); if(recenter) map.setView([lat,lon], Math.max(map.getZoom(),18)); updateInfo(lat,lon); }
@@ -317,12 +317,12 @@
     if(!layer || !isPolygonish(layer)){ mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; if(mLongest) mLongest.textContent='—'; return; }
     if(layer instanceof L.Circle){
       const r=layer.getRadius(); const area=Math.PI*r*r, peri=2*Math.PI*r;
-      mType.textContent='Circle'; mArea.textContent=${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha); mPerim.textContent=${peri.toFixed(2)} m; if(mLongest) mLongest.textContent='—'; return;
+      mType.textContent='Circle'; mArea.textContent=`${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`; mPerim.textContent=`${peri.toFixed(2)} m`; if(mLongest) mLongest.textContent='—'; return;
     }
     const gj=layer.toGeoJSON(), type=gj.geometry?.type||'Feature'; mType.textContent=type;
     if(type==='Polygon'||type==='MultiPolygon'){
       const area=turf.area(gj); const outline=turf.polygonToLine(gj); const lengthKm=turf.length(outline,{units:'kilometers'}); const peri=lengthKm*1000;
-      mArea.textContent=${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha); mPerim.textContent=${peri.toFixed(2)} m; if(mLongest) mLongest.textContent=${longestEdgeMetersFromGeom(gj.geometry).toFixed(2)} m;
+      mArea.textContent=`${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`; mPerim.textContent=`${peri.toFixed(2)} m`; if(mLongest) mLongest.textContent=`${longestEdgeMetersFromGeom(gj.geometry).toFixed(2)} m`;
     } else { mArea.textContent=mPerim.textContent='—'; if(mLongest) mLongest.textContent='—'; }
   }
   function setSelected(layer){ if(selectedLayer&&selectedLayer.setStyle&&isPolygonish(selectedLayer)) selectedLayer.setStyle(defaultStyle); selectedLayer=layer; if(selectedLayer&&selectedLayer.setStyle&&isPolygonish(selectedLayer)) selectedLayer.setStyle(activeStyle); if(isPolygonish(layer)){ lastShapeLayer=layer; updateMetrics(layer);} else updateMetrics(null); }
@@ -347,7 +347,7 @@
   let svService=null, panorama=null; const svTitle=byId('sv-title'), svBtnClose=byId('sv-close'), svBtnPop=byId('sv-popout');
   function showSVPanel(show){ svPanel.style.display=show?'block':'none'; }
   function ensureSV(){ if(!window.google||!google.maps) return false; if(!svService) svService=new google.maps.StreetViewService(); if(!panorama) panorama=new google.maps.StreetViewPanorama(byId('pano'),{addressControl:true,linksControl:true,panControl:true,zoomControl:true,fullscreenControl:true}); return true; }
-  function openSVAt(lat,lon){ if(!ensureSV()) return alert('Google Maps API not ready'); const loc={lat,lng:lon}; svService.getPanorama({location:loc,radius:70},(data,status)=>{ if(status==='OK'&&data?.location){ panorama.setPano(data.location.pano); panorama.setPov({heading:0,pitch:0}); panorama.setVisible(true); svTitle.textContent='Street View'; svBtnPop.onclick=()=>window.open(https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()},'_blank','noopener'); showSVPanel(true);} else alert('No Street View here.'); }); }
+  function openSVAt(lat,lon){ if(!ensureSV()) return alert('Google Maps API not ready'); const loc={lat,lng:lon}; svService.getPanorama({location:loc,radius:70},(data,status)=>{ if(status==='OK'&&data?.location){ panorama.setPano(data.location.pano); panorama.setPov({heading:0,pitch:0}); panorama.setVisible(true); svTitle.textContent='Street View'; svBtnPop.onclick=()=>window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`,'_blank','noopener'); showSVPanel(true);} else alert('No Street View here.'); }); }
   byId('btn-sv-center').addEventListener('click',()=>{ const c=map.getCenter(); openSVAt(c.lat,c.lng); });
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
   map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
@@ -369,7 +369,7 @@
   // Snapping
   async function osrmNearest(lat,lon){
     try{
-      const url = https://router.project-osrm.org/nearest/v1/driving/${lon},${lat};
+      const url = `https://router.project-osrm.org/nearest/v1/driving/${lon},${lat}`;
       const j = await fetch(url).then(r=>r.json());
       const loc = j?.waypoints?.[0]?.location;
       if (Array.isArray(loc) && loc.length===2) return { lat: loc[1], lon: loc[0] };
@@ -381,7 +381,7 @@
   function renderVias(){
     viasWrap.innerHTML='';
     routeState.vias.forEach((v,i)=>{
-      const chip=document.createElement('span'); chip.className='via-chip'; chip.innerHTML=Via ${i+1} <button title="remove">✕</button>;
+      const chip=document.createElement('span'); chip.className='via-chip'; chip.innerHTML=`Via ${i+1} <button title="remove">✕</button>`;
       chip.querySelector('button').onclick=()=>removeVia(i);
       viasWrap.appendChild(chip);
     });
@@ -401,17 +401,17 @@
 
   function setRoutePoint(which, lat, lon, label=''){
     const obj={lat,lon,label};
-    const formatted=${lat.toFixed(6)}, ${lon.toFixed(6)};
+    const formatted=`${lat.toFixed(6)}, ${lon.toFixed(6)}`;
     if(which==='start'){
       routeState.start=obj;
-      elRS.value = label?${label} (${formatted}):formatted;
+      elRS.value = label?`${label} (${formatted})`:formatted;
       if(startMarker) startMarker.setLatLng([lat,lon]); else { startMarker=L.marker([lat,lon],{draggable:true}).addTo(routeLayer).bindPopup('Start');
-        startMarker.on('dragend',async()=>{ const p=startMarker.getLatLng(); const s=await snapIfNeeded({lat:p.lat,lon:p.lng,label:'Dragged Start'}); routeState.start=s; startMarker.setLatLng([s.lat,s.lon]); elRS.value=${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}; }); }
+        startMarker.on('dragend',async()=>{ const p=startMarker.getLatLng(); const s=await snapIfNeeded({lat:p.lat,lon:p.lng,label:'Dragged Start'}); routeState.start=s; startMarker.setLatLng([s.lat,s.lon]); elRS.value=`${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}`; }); }
     } else {
       routeState.end=obj;
-      elRE.value = label?${label} (${formatted}):formatted;
+      elRE.value = label?`${label} (${formatted})`:formatted;
       if(endMarker) endMarker.setLatLng([lat,lon]); else { endMarker=L.marker([lat,lon],{draggable:true}).addTo(routeLayer).bindPopup('End');
-        endMarker.on('dragend',async()=>{ const p=endMarker.getLatLng(); const s=await snapIfNeeded({lat:p.lat,lon:p.lng,label:'Dragged End'}); routeState.end=s; endMarker.setLatLng([s.lat,s.lon]); elRE.value=${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}; }); }
+        endMarker.on('dragend',async()=>{ const p=endMarker.getLatLng(); const s=await snapIfNeeded({lat:p.lat,lon:p.lng,label:'Dragged End'}); routeState.end=s; endMarker.setLatLng([s.lat,s.lon]); elRE.value=`${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}`; }); }
     }
   }
   byId('btn-pin-start').addEventListener('click',async()=>{ const p=pin.getLatLng(); const s=await snapIfNeeded({lat:p.lat,lon:p.lng,label:'Pin'}); setRoutePoint('start',s.lat,s.lon,'Pin'); });
@@ -426,10 +426,10 @@
       .map(pair=>pair.join(',')).join(';');
     const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'true', steps:'true' });
     if (avoidFerries) params.set('exclude','ferry');
-    const url = https://router.project-osrm.org/route/v1/driving/${coords}?${params};
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?${params}`;
     const j = await fetch(url).then(r=>r.json()).catch(()=>null);
     if (!j||!j.routes) return [];
-    return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?via(${vias.length}):'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
+    return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?`via(${vias.length})`:'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
   }
 
   function googleRouteToFullPath(route){
@@ -466,13 +466,13 @@
       // Combine legs to measure
       let distance=0, duration=0;
       (r.legs||[]).forEach(leg=>{ distance+=(leg.distance?.value||0); duration+=(leg.duration?.value||0); });
-      return { provider:'Google', tag: vias.length?via(${vias.length}):'base', distance, duration, coords: path };
+      return { provider:'Google', tag: vias.length?`via(${vias.length})`:'base', distance, duration, coords: path };
     });
   }
 
   function hashCoords(coords){ const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]); return JSON.stringify([rounded.length, rounded.slice(0,200)]); }
   function midpointLatLng(latlngs){ return latlngs[Math.floor(latlngs.length/2)]; }
-  function makeNumberBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
+  function makeNumberBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:`<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
 
   function setActiveRoute(idx){
     routeState.activeIdx=idx;
@@ -491,13 +491,13 @@
     const mid=midpointLatLng(coords); const badge=makeNumberBadge(routeState.polylines.length+1,color,mid).addTo(routeLayer);
 
     const km=(meta.distance/1000).toFixed(2);
-    const mins=Math.round(meta.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?${hrs}h ${rem}m:${mins} min;
+    const mins=Math.round(meta.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
 
     const idx = routeState.polylines.length; // capture index BEFORE pushing
     const item=document.createElement('div'); item.className='route-item';
-    item.innerHTML=<div class="route-swatch" style="background:${color}"></div>
+    item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
       <div><b>${idx+1}.</b> ${km} km • ${durTxt}
-      <span class="provider-tag">${meta.provider}</span></div>;
+      <span class="provider-tag">${meta.provider}</span></div>`;
     item.onclick=()=>setActiveRoute(idx);
     poly.on('click',()=>setActiveRoute(idx));
 
@@ -516,9 +516,9 @@
       if(Math.abs(a)<=90 && Math.abs(b)<=180){ return await snapIfNeeded({lat:a,lon:b,label:'Lat/Lon'}); }
     }
     const maybePC=normalizeUKPostcode(raw);
-    if(maybePC){ try{ const r=await fetch(https://api.postcodes.io/postcodes/${maybePC}); const j=await r.json(); if(j?.status===200&&j.result) return await snapIfNeeded({lat:j.result.latitude, lon:j.result.longitude, label:j.result.postcode}); }catch{} }
+    if(maybePC){ try{ const r=await fetch(`https://api.postcodes.io/postcodes/${maybePC}`); const j=await r.json(); if(j?.status===200&&j.result) return await snapIfNeeded({lat:j.result.latitude, lon:j.result.longitude, label:j.result.postcode}); }catch{} }
     try{
-      const url=https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB;
+      const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
       const r=await fetch(url,{headers:{'Accept':'application/json'}}); const j=await r.json();
       if(j&&j.length) return await snapIfNeeded({lat:+j[0].lat, lon:+j[0].lon, label:(j[0].display_name||'').split(',')[0]||'Address'});
     }catch{}
@@ -530,7 +530,7 @@
   function metersToDegLon(m,lat){ return m/(111320*Math.cos((lat*Math.PI)/180)); }
 
   function generateCorridorVias(start,end,count,breadth){
-    // Build up to count via sets by placing two control points at 1/3 and 2/3,
+    // Build up to `count` via sets by placing two control points at 1/3 and 2/3,
     // offset alternately left/right with varying magnitude.
     const result=[];
     const lat1=start.lat, lon1=start.lon, lat2=end.lat, lon2=end.lon;
@@ -568,7 +568,7 @@
     // First, provider's own alternatives without our vias:
     all.push({ label:'base', vias: [] });
     for (const vs of viaList){
-      all.push({ label:cvias(${vs.length}), vias: vs });
+      all.push({ label:`cvias(${vs.length})`, vias: vs });
     }
     let routes=[];
     for (const bucket of all){
