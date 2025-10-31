@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet — Two Fastest by Endpoint Direction (Road-True)</title>
+  <title>Leaflet — Two Fastest by Endpoint Direction (Road‑True, OSRM+Google A/B)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -49,8 +49,8 @@
 <div id="map">
   <div class="toolbar">
     <button id="toggle-panels" title="Show/Hide routes">Panels</button>
-    <input id="route-start" class="mini" type="text" placeholder="Start: address / 52.6,-2.7 / 349000,306000" />
-    <input id="route-end"   class="mini" type="text" placeholder="End: address / 52.7,-2.8 / 340000,300000" />
+    <input id="route-start" class="mini" type="text" placeholder="Start (Dev site): address / 52.6,-2.7 / 349000,306000" />
+    <input id="route-end"   class="mini" type="text" placeholder="End (Substation): address / 52.7,-2.8 / 340000,300000" />
     <button id="btn-pin-start" title="Use pin as Start">Pin→Start</button>
     <button id="btn-pin-end" title="Use pin as End">Pin→End</button>
     <button id="btn-swap" title="Swap start/end">Swap</button>
@@ -60,17 +60,46 @@
 
   <div class="bottom-dock" id="bottom-dock">
     <div class="card routebox" id="routebox">
-      <h4>ROUTES (Two fastest by endpoint direction):</h4>
+      <h4>ROUTES — Exactly two per provider (endpoint A/B): OSRM A/B + Google A/B</h4>
       <div id="r-list"></div>
       <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
         <button id="btn-use-selected" class="btn" title="Add selected route to drawings">Use Selected</button>
         <button id="btn-copy-selected" class="btn" title="Copy selected route coordinates">Copy Coords</button>
         <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
       </div>
-      <div style="opacity:.75">Right-click to set Start/End • Shift+Click to move pin • Exactly two routes when the endpoint has two viable directions; otherwise one.</div>
+      <div style="opacity:.75">Right‑click to set Start then End • Shift+Click to move pin • Endpoint = End; we enforce two directions from End back to Start per provider.</div>
     </div>
   </div>
 </div>
+
+<!-- Google key loader (GitHub-friendly): window.__GMAPS_KEY or gmaps-config.js or ?gmaps= or localStorage -->
+<script>
+(function () {
+  const STORAGE = 'gmapsApiKey';
+  function inject(k) {
+    if (!k || window.__GMAPS_INJECTED) return;
+    const s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(k) + '&v=weekly&loading=async';
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
+    window.__GMAPS_INJECTED = true;
+  }
+  const paramKey = new URL(location.href).searchParams.get('gmaps');
+  if (paramKey) { localStorage.setItem(STORAGE, paramKey); inject(paramKey); }
+  else if (window.__GMAPS_KEY) { localStorage.setItem(STORAGE, window.__GMAPS_KEY); inject(window.__GMAPS_KEY); }
+  else {
+    const savedKey = localStorage.getItem(STORAGE);
+    if (savedKey) inject(savedKey);
+    // Try optional config file auto‑loaded on GitHub Pages
+    const probe = document.createElement('script');
+    probe.src = 'gmaps-config.js'; // should set window.__GMAPS_KEY='...'
+    probe.async = true;
+    probe.onload = () => { if (window.__GMAPS_KEY) { localStorage.setItem(STORAGE, window.__GMAPS_KEY); inject(window.__GMAPS_KEY); } };
+    document.head.appendChild(probe);
+  }
+  window.__clearGMapsKey = () => { localStorage.removeItem(STORAGE); location.reload(); };
+})();
+</script>
 
 <script type="module">
   // ---- Basic map + layers ----
@@ -101,7 +130,7 @@
   // Route layer + state
   const routeLayer=L.layerGroup().addTo(map);
   const routeState={ start:null, end:null, polylines:[], labels:[], meta:[], activeIdx:-1 };
-  const PALETTE=['#e53935','#1e88e5'];
+  const COLORS=['#e53935','#1e88e5','#43a047','#8e24aa']; // OSRM A,B then Google A,B
   const rList=byId('r-list');
 
   // --- Helpers: parsing & snapping ---
@@ -161,9 +190,7 @@
   async function endpointAnchors(endLat, endLon){
     const raw = await osrmNearestMulti(endLat, endLon, 4);
     const uniq = dedupeByMeters(raw, 8);
-    // Filter out the exact snapped point (within 1 m)
     const filtered = uniq.filter(p => (turf.distance([p.lon,p.lat],[endLon,endLat],{units:'kilometers'})*1000) > 1.0);
-    // Pick two closest distinct anchors; if only one exists → cul-de-sac
     filtered.sort((a,b)=>{
       const da = turf.distance([a.lon,a.lat],[endLon,endLat],{units:'kilometers'});
       const db = turf.distance([b.lon,b.lat],[endLon,endLat],{units:'kilometers'});
@@ -181,7 +208,38 @@
     const j = await fetch(url).then(r=>r.json()).catch(()=>null);
     if (!j||!j.routes) return null;
     const rt = j.routes[0];
-    return { distance: rt.distance, duration: rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) };
+    return { provider:'OSRM', distance: rt.distance, duration: rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) };
+  }
+
+  // Google routing (single path, no alternatives)
+  async function fetchGoogle(start, end, vias=[]){
+    if (!window.google?.maps) return null;
+    const svc = new google.maps.DirectionsService();
+    const req = {
+      origin: {lat:start.lat, lng:start.lon},
+      destination: {lat:end.lat, lng:end.lon},
+      travelMode: 'DRIVING',
+      provideRouteAlternatives: false
+    };
+    if (vias && vias.length){
+      req.waypoints = vias.map(v=>({ location:{lat:v.lat, lng:v.lon}, stopover:false }));
+    }
+    const res = await new Promise(resolve => svc.route(req,(r,st)=>resolve(st==='OK'?r:null)));
+    if (!res?.routes?.[0]) return null;
+    const r = res.routes[0];
+    const pts=[];
+    (r.legs||[]).forEach(leg=>{
+      (leg.steps||[]).forEach(step=>{
+        const path=step.path||[];
+        for(let i=0;i<path.length;i++) pts.push([path[i].lat(), path[i].lng()]);
+      });
+    });
+    if (!pts.length && r.overview_path){
+      for(const p of r.overview_path) pts.push([p.lat(), p.lng()]);
+    }
+    let distance=0, duration=0;
+    (r.legs||[]).forEach(leg=>{ distance+=(leg.distance?.value||0); duration+=(leg.duration?.value||0); });
+    return { provider:'Google', distance, duration, coords: pts };
   }
 
   // UI: markers + actions
@@ -214,38 +272,39 @@
   }
 
   function hashCoords(coords){ const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]); return JSON.stringify([rounded.length, rounded.slice(0,200)]); }
-  function midpoint(latlngs){ return latlngs[Math.floor(latlngs.length/2)]||latlngs[0]; }
+  function midpointLatLng(latlngs){ return latlngs[Math.floor(latlngs.length/2)]||latlngs[0]; }
   function makeBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:`<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
   function fmtDur(sec){ const m=Math.round(sec/60); const h=Math.floor(m/60); const r=m%60; return h?`${h}h ${r}m`:`${m} min`; }
 
   function addRouteToUI(route, label){
     const idx=routeState.polylines.length;
-    const color=PALETTE[idx%PALETTE.length];
+    const color=COLORS[idx%COLORS.length];
     const poly=L.polyline(route.coords,{color,weight:5,opacity:0.95}).addTo(routeLayer);
-    const badge=makeBadge(idx+1,color,midpoint(route.coords)).addTo(routeLayer);
+    const badge=makeBadge(idx+1,color,midpointLatLng(route.coords)).addTo(routeLayer);
 
     const item=document.createElement('div'); item.className='route-item';
     item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
                     <div><b>${idx+1}.</b> ${ (route.distance/1000).toFixed(2) } km • ${ fmtDur(route.duration) }
-                    <span style="opacity:.7;margin-left:6px;">${label}</span></div>`;
+                    <span style="opacity:.7;margin-left:6px;">${label}</span>
+                    <span class="provider-tag" style="opacity:.7;border:1px solid #ddd;border-radius:6px;padding:2px 6px;margin-left:6px;">${route.provider}</span></div>`;
     item.onclick=()=>setActiveRoute(idx); poly.on('click',()=>setActiveRoute(idx));
 
     rList.appendChild(item);
-    routeState.polylines.push(poly); routeState.labels.push(badge); routeState.meta.push({color,label, distance:route.distance, duration:route.duration});
+    routeState.polylines.push(poly); routeState.labels.push(badge); routeState.meta.push({color,label, provider:route.provider, distance:route.distance, duration:route.duration});
   }
 
   function setActiveRoute(i){
     routeState.activeIdx=i;
-    routeState.polylines.forEach((pl,ix)=>pl.setStyle({weight: ix===i?7:5, opacity: ix===i?1:0.8, dashArray: ix===i?null:'6,6'}));
+    routeState.polylines.forEach((pl,ix)=>pl.setStyle({weight: ix===i?7:5, opacity: ix===i?1:0.85, dashArray: ix===i?null:'6,6'}));
     const items=[...rList.querySelectorAll('.route-item')]; items.forEach((el,ix)=>el.classList.toggle('active',ix===i));
     const pl=routeState.polylines[i]; if(pl) map.fitBounds(pl.getBounds(),{padding:[30,30]});
   }
 
-  // Core: plan exactly two routes forced by ENDPOINT direction
-  async function planTwoByEndpointDirection(){
+  // Core: EXACTLY two per provider forced by ENDPOINT direction
+  async function planExactTwoPerProvider(){
     // Parse inputs if not set
-    if(!routeState.start){ const s = await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); routeState.start=s; }
-    if(!routeState.end){   const e = await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.');   routeState.end=e; }
+    if(!routeState.start){ const s = await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start (Dev site).'); routeState.start=s; }
+    if(!routeState.end){   const e = await resolvePoint(elRE.value); if(!e) return alert('Set a valid End (Substation).');   routeState.end=e; }
 
     // Snap both to the nearest road
     const start = await snapPoint(routeState.start);
@@ -254,36 +313,37 @@
 
     // Find up to two distinct on-road anchors around the END (endpoint)
     const anchors = await endpointAnchors(end.lat, end.lon);
+
+    clearRoutes();
+
     if (!anchors.length){
-      // cul-de-sac or single approach only → just one route (no pre-end anchor)
-      const r = await fetchOSRM(start,end);
-      if(!r) return alert('No route found.');
-      clearRoutes();
-      addRouteToUI(r, 'Endpoint single approach');
+      // cul-de-sac or single approach → return one per provider without anchor
+      const r1 = await fetchOSRM(start,end);
+      if (r1) addRouteToUI(r1, 'Endpoint single approach');
+      const r2 = await fetchGoogle(start,end);
+      if (r2) addRouteToUI(r2, 'Endpoint single approach');
+      if (!routeState.polylines.length) return alert('No route candidates. The endpoint might be unreachable.');
       setActiveRoute(0);
       return;
     }
 
-    clearRoutes();
+    const a = anchors[0];
+    const b = anchors[1] || null;
 
-    // Produce routes: Start → AnchorA → End (and AnchorB if exists)
-    const first = await fetchOSRM(start, end, [anchors[0]]);
-    if(first) addRouteToUI(first, 'Endpoint direction A');
+    // OSRM A/B
+    const osrmA = await fetchOSRM(start, end, [a]); if (osrmA) addRouteToUI(osrmA, 'Endpoint direction A');
+    if (b){ const osrmB = await fetchOSRM(start, end, [b]); if (osrmB && hashCoords(osrmB.coords)!==hashCoords(osrmA?.coords||[])) addRouteToUI(osrmB, 'Endpoint direction B'); }
 
-    if(anchors[1]){
-      const second = await fetchOSRM(start, end, [anchors[1]]);
-      // De-dupe if geometry is identical
-      if (second && hashCoords(second.coords)!==hashCoords(first?.coords||[])){
-        addRouteToUI(second, 'Endpoint direction B');
-      }
-    }
+    // Google A/B
+    const googleA = await fetchGoogle(start, end, [a]); if (googleA) addRouteToUI(googleA, 'Endpoint direction A');
+    if (b){ const googleB = await fetchGoogle(start, end, [b]); if (googleB && hashCoords(googleB.coords)!==hashCoords(googleA?.coords||[])) addRouteToUI(googleB, 'Endpoint direction B'); }
 
-    if (!routeState.polylines.length) return alert('No route candidates. The endpoint might be a hard dead-end.');
+    if (!routeState.polylines.length) return alert('No route candidates. Try a different pair.');
     setActiveRoute(0);
   }
 
   // Buttons
-  byId('btn-route').addEventListener('click', planTwoByEndpointDirection);
+  byId('btn-route').addEventListener('click', planExactTwoPerProvider);
   byId('btn-clear-route').addEventListener('click', clearRoutes);
   byId('btn-use-selected').addEventListener('click',()=>{
     const i=routeState.activeIdx; if(i==null||i<0) return alert('Select a route first.');
@@ -311,5 +371,6 @@
 </script>
 
 <noscript>Enable JavaScript to view the map.</noscript>
+<!-- Optional: gmaps-config.js with "window.__GMAPS_KEY='YOUR_KEY'" can sit next to this file in your repo -->
 </body>
 </html>
