@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Car Navigation — Multi-Corridor Alternatives (Road-True)</title>
+  <title>Leaflet — Two Fastest by Endpoint Direction (Road-True)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -18,13 +18,8 @@
   <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.15.0/dist/leaflet-geoman.css">
   <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.15.0/dist/leaflet-geoman.min.js"></script>
 
-  <!-- GoogleMutant -->
-  <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@0.15.0/dist/Leaflet.GoogleMutant.js"></script>
-
-  <!-- Proj4 -->
+  <!-- Proj4 + Turf -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.1/proj4.min.js"></script>
-
-  <!-- Turf.js -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 
   <style>
@@ -35,345 +30,103 @@
       position: absolute; z-index: 1500; top: 10px; left: 60px; right: 10px;
       background: #fff; border-radius: 12px; padding: 8px 10px;
       box-shadow: 0 2px 12px rgba(0,0,0,.18); font: 14px system-ui, sans-serif;
-      display: flex; align-items: center; gap: 8px;
-      flex-wrap: nowrap; white-space: nowrap;
-      overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+      display: flex; align-items: center; gap: 8px; overflow-x: auto; white-space: nowrap;
     }
-    .toolbar select, .toolbar input, .toolbar button, .toolbar label {
-      padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; flex: 0 0 auto; cursor: pointer;
-    }
-    .toolbar label { display:flex; align-items:center; gap:6px; padding:4px 8px; }
-    #q { min-width: 260px; flex: 1 1 320px; }
-    .mini { width: 200px; }
-    .toolbar .spacer { width: 6px; flex: 0 0 auto; }
-
+    .toolbar input, .toolbar button, .toolbar label { padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; }
+    .mini { width: 240px; }
     .leaflet-control { z-index: 1200 !important; }
-    .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 120px !important; }
 
-    /* Bottom dock */
-    .bottom-dock {
-      position: absolute; z-index: 1400; left: 10px; right: 10px; bottom: 10px;
-      display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap;
-    }
-    .card { background: #fff; border-radius: 10px; padding: 10px 12px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.18); font: 13px system-ui, sans-serif; }
-    .card h4 { margin: 0 0 6px 0; font-size: 14px; }
-    .row { margin: 4px 0; }
-    code { background: #fafafa; padding: 1px 4px; border-radius: 4px; }
-
-    .metrics { min-width: 280px; max-width: 420px; flex: 0 1 auto; }
+    .bottom-dock { position:absolute; z-index:1400; left:10px; right:10px; bottom:10px; display:flex; gap:10px; flex-wrap:wrap; }
+    .card { background:#fff; border-radius:10px; padding:10px 12px; box-shadow:0 2px 10px rgba(0,0,0,.18); font:13px system-ui; }
     .routebox { min-width: 420px; max-width: 960px; flex: 1 1 600px; }
-    .infobox { min-width: 280px; max-width: 360px; flex: 0 1 auto; }
-
-    .btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer; }
-
     .route-item { display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid #eee; border-radius:8px; margin:6px 0; cursor:pointer; }
-    .route-swatch { width:14px; height:14px; border-radius:3px; border:1px solid #bbb; }
     .route-item.active { border-color:#bbb; background:#fafafa; }
-    .provider-tag { font-size: 11px; opacity:.8; padding:2px 6px; border:1px solid #ddd; border-radius:6px; }
-
-    .via-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1px solid #ddd; border-radius:14px; margin-right:6px; }
-    .via-chip button { border:none; background:transparent; cursor:pointer; }
-
-    /* Street View */
-    #sv-panel { position: absolute; z-index: 1450; right: 10px; bottom: 10px; width: 420px; height: 300px;
-      background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,.18); display: none; overflow: hidden; border: 1px solid #ddd; resize: both; }
-    #sv-header { height: 36px; display:flex; align-items:center; justify-content:space-between; padding: 0 10px; border-bottom: 1px solid #eee; background:#fafafa; font: 13px system-ui; }
-    #sv-title { font-weight: 600; }
-    #sv-actions button { margin-left: 6px; padding: 4px 8px; border: 1px solid #ddd; background:#fff; border-radius: 6px; cursor: pointer; }
-    #pano { width: 100%; height: calc(100% - 36px); }
+    .route-swatch { width:14px; height:14px; border-radius:3px; border:1px solid #bbb; }
+    .btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer; }
   </style>
 </head>
 <body>
 <div id="map">
-  <div class="toolbar" id="ui-toolbar">
-    <button id="toggle-panels" title="Show/Hide bottom panels">Panels</button>
-
-    <select id="mode" title="Search mode">
-      <option value="postcode">Postcode / Address</option>
-      <option value="latlon">Lat, Lon</option>
-      <option value="en">Easting, Northing</option>
-    </select>
-    <input id="q" type="text" placeholder="SY3 0NS  |  52.677027, -2.773167  |  349000, 306000" />
-    <button id="go">Search</button>
-
-    <span class="spacer"></span>
-
-    <button id="btn-export" title="Download drawings as GeoJSON">Export</button>
-    <button id="btn-import" title="Load drawings from GeoJSON">Import</button>
-    <input id="file-import" type="file" accept=".json,.geojson" style="display:none">
-
-    <span class="spacer"></span>
-
-    <button id="btn-edit-all" title="Enable edit mode for all shapes">Edit All</button>
-    <button id="btn-drag"     title="Enable drag mode for shapes">Drag Mode</button>
-    <button id="btn-finish"   title="Disable edit/drag modes">Finish Edit</button>
-
-    <span class="spacer"></span>
-
-    <button id="btn-sv-center" title="Open Street View at map centre">Street View here</button>
-    <button id="btn-sv-pin" title="Open Street View at last pin">Street View at Pin</button>
-
-    <span class="spacer"></span>
-
-    <!-- Car routing -->
+  <div class="toolbar">
+    <button id="toggle-panels" title="Show/Hide routes">Panels</button>
     <input id="route-start" class="mini" type="text" placeholder="Start: address / 52.6,-2.7 / 349000,306000" />
     <input id="route-end"   class="mini" type="text" placeholder="End: address / 52.7,-2.8 / 340000,300000" />
-    <label title="Avoid motorways (Google only)"><input type="checkbox" id="avoid-hwy"> Avoid motorways</label>
-    <label title="Avoid tolls (Google only)"><input type="checkbox" id="avoid-tolls"> Avoid tolls</label>
-    <label title="Avoid ferries"><input type="checkbox" id="avoid-ferries"> Avoid ferries</label>
-    <button id="btn-pin-start" title="Use current pin as Start">Pin→Start</button>
-    <button id="btn-pin-end" title="Use current pin as End">Pin→End</button>
+    <button id="btn-pin-start" title="Use pin as Start">Pin→Start</button>
+    <button id="btn-pin-end" title="Use pin as End">Pin→End</button>
     <button id="btn-swap" title="Swap start/end">Swap</button>
     <button id="btn-route" title="Calculate routes">Route</button>
     <button id="btn-clear-route" title="Clear routes">Clear</button>
-    <label title="Use Google Directions (more alternatives)"><input type="checkbox" id="use-google" checked> Use Google</label>
-
-    <span class="spacer"></span>
-
-    <!-- NEW: Two-way endpoint exploration -->
-    <label title="Force both possible road directions at each endpoint (skip when cul-de-sac)">
-      <input type="checkbox" id="two-way-endpoints" checked> Two-way at endpoints
-    </label>
-
-    <!-- NEW: Multi-corridor exploration controls -->
-    <label title="Explore extra corridors by inserting snapped via control points">
-      <input type="checkbox" id="explore-corridors" checked> Explore
-    </label>
-    <label title="How many corridor variants to try (in addition to provider alternatives)">
-      Variants: <input id="variant-count" type="number" min="0" max="12" step="1" value="6" style="width:64px">
-    </label>
-    <label title="How far to push each corridor sideways (meters). Larger = further off the direct line.">
-      Breadth: <input id="variant-breadth" type="number" min="100" max="5000" step="100" value="1200" style="width:72px"> m
-    </label>
   </div>
 
-  <!-- Bottom dock: METRICS + ROUTES + LOCATION together -->
   <div class="bottom-dock" id="bottom-dock">
-    <div class="card metrics" id="metrics">
-      <h4>DRAWN POLYGON INFORMATION:</h4>
-      <div class="row">Type: <code id="m-type">—</code></div>
-      <div class="row">Area: <code id="m-area">—</code></div>
-      <div class="row">Perimeter: <code id="m-perim">—</code></div>
-      <div class="row">Longest edge: <code id="m-longest">—</code></div>
-      <div class="row" style="margin-top:8px;">
-        <button id="btn-copy" class="btn">Copy Coords</button>
-        <button id="btn-center-shape" class="btn">Center on Shape</button>
-      </div>
-    </div>
-
     <div class="card routebox" id="routebox">
-      <h4>ROUTES (Car):</h4>
-      <div class="row">Vias (Ctrl+Click to add): <span id="vias"></span> <button id="clear-vias" class="btn">Clear vias</button></div>
-      <div id="r-list" class="row"></div>
-      <div class="row" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
-        <button id="btn-use-selected" class="btn" title="Add the selected route to drawings">Use Selected</button>
+      <h4>ROUTES (Two fastest by endpoint direction):</h4>
+      <div id="r-list"></div>
+      <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+        <button id="btn-use-selected" class="btn" title="Add selected route to drawings">Use Selected</button>
         <button id="btn-copy-selected" class="btn" title="Copy selected route coordinates">Copy Coords</button>
         <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
       </div>
-      <div class="row" style="opacity:.8">Road-true geometry. Press <b>P</b> to toggle dock. Right-click to set Start/End, Ctrl+Click to add a Via.</div>
+      <div style="opacity:.75">Right-click to set Start/End • Shift+Click to move pin • Exactly two routes when the endpoint has two viable directions; otherwise one.</div>
     </div>
-
-    <div class="card infobox" id="info">
-      <h4>LOCATION INFORMATION:</h4>
-      <div class="row">Postcode: <code id="postcode">—</code></div>
-      <div class="row">Lat/Lon: <code id="latlon">—</code></div>
-      <div class="row">Easting/Northing: <code id="en">—</code></div>
-      <div class="row" style="opacity:.8">Shift+Click: drop pin • Ctrl+Click: add via • Alt+Click: Street View • Right-click: set Start/End</div>
-    </div>
-  </div>
-
-  <!-- Street View -->
-  <div id="sv-panel">
-    <div id="sv-header">
-      <div id="sv-title">Street View</div>
-      <div id="sv-actions">
-        <button id="sv-popout" title="Open in Google Maps">Open in Maps</button>
-        <button id="sv-close" title="Close Street View">Close</button>
-      </div>
-    </div>
-    <div id="pano"></div>
   </div>
 </div>
 
-<!-- Runtime Google API key loader (Option B) -->
-<script id="gmaps-loader">
-(function () {
-  const STORAGE = 'gmapsApiKey';
-  const paramKey = new URL(location.href).searchParams.get('gmaps');
-  if (paramKey) localStorage.setItem(STORAGE, paramKey);
-  const savedKey = localStorage.getItem(STORAGE);
-  function inject(k) {
-    if (!k) return;
-    const s = document.createElement('script');
-    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(k) + '&v=weekly&loading=async';
-    s.async = true; s.defer = true;
-    document.head.appendChild(s);
-  }
-  if (savedKey) { inject(savedKey); return; }
-  const ui = document.createElement('div');
-  ui.style.cssText = 'position:fixed;z-index:2000;left:50%;top:12px;transform:translateX(-50%);background:#fff;padding:10px 12px;border:1px solid #ddd;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:13px system-ui';
-  ui.innerHTML = `
-    <b>Google Maps API key needed</b>
-    <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
-      <input id="gmaps-key-input" type="password" placeholder="Paste key…" style="width:280px;padding:6px 8px;border:1px solid #ccc;border-radius:8px;">
-      <button id="gmaps-key-save" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#f7f7f7;cursor:pointer;">Save</button>
-      <button id="gmaps-key-cancel" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;">Dismiss</button>
-    </div>
-    <div style="margin-top:6px;opacity:.75">Or use <code>?gmaps=YOUR_KEY</code>. Stored only in this browser.</div>`;
-  document.addEventListener('DOMContentLoaded', () => {
-    document.body.appendChild(ui);
-    document.getElementById('gmaps-key-save')?.addEventListener('click', () => {
-      const val = document.getElementById('gmaps-key-input').value.trim();
-      if (!val) return alert('Paste your Google Maps JavaScript API key.');
-      localStorage.setItem(STORAGE, val); ui.remove(); inject(val);
-    });
-    document.getElementById('gmaps-key-cancel')?.addEventListener('click', () => ui.remove());
-  });
-  window.__clearGMapsKey = () => { localStorage.removeItem(STORAGE); location.reload(); };
-})();
-</script>
-
 <script type="module">
-  // Config
+  // ---- Basic map + layers ----
   const centre = [52.677027, -2.773167];
-  proj4.defs('EPSG:27700', '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs');
-  const WGS84 = 'EPSG:4326', OSGB='EPSG:27700';
-  const byId = id => document.getElementById(id);
-  const isNum = v => typeof v === 'number' && isFinite(v) && !isNaN(v);
+  const map = L.map("map", { center: centre, zoom: 18, layers: [], fullscreenControl: true });
+  const esriImagery = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {maxZoom:20, attribution:"Imagery © Esri"}).addTo(map);
+  const esriLabels  = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {maxZoom:20, attribution:"Labels © Esri"}).addTo(map);
+  L.control.layers({ "Esri Satellite": esriImagery }, { "Esri Labels": esriLabels }, { collapsed: false }).addTo(map);
 
-  // Panels toggle
-  const bottomDock = byId('bottom-dock');
-  byId('toggle-panels').onclick = () => { bottomDock.style.display = (bottomDock.style.display==='none' ? 'flex' : 'none'); };
-  document.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='p') byId('toggle-panels').click(); });
-
-  // Basemaps
-  const esriImagery = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {maxZoom:20, attribution:"Imagery © Esri"});
-  const esriLabels  = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {maxZoom:20, attribution:"Labels © Esri"});
-  const osmStreets  = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:20, attribution:"© OpenStreetMap contributors"});
-
-  const map = L.map("map", { center: centre, zoom: 19, layers: [esriImagery, esriLabels], fullscreenControl: true });
-
-  function blockEventsFor(selector) {
-    document.querySelectorAll(selector).forEach(el => { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); });
-  }
-  blockEventsFor('#ui-toolbar, #bottom-dock, #sv-panel, .leaflet-control-container');
+  // Prevent UI from eating map gestures
+  (function block(selector){ document.querySelectorAll(selector).forEach(el=>{ L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); }); })('.toolbar, #bottom-dock, .leaflet-control-container');
 
   // Pin
-  let pin = L.marker(centre).addTo(map).bindPopup("SY3 0NS").openPopup();
+  let pin = L.marker(centre).addTo(map).bindPopup("Pin").openPopup();
+  function setPin(lat,lon, recenter=false){ pin.setLatLng([lat,lon]).openPopup(); if(recenter) map.setView([lat,lon], Math.max(map.getZoom(),18)); }
 
-  // Google layers (async)
-  async function ensureGoogle() {
-    for (let i=0;i<400;i++) { if (window.google?.maps?.importLibrary) break; await new Promise(r=>setTimeout(r,25)); }
-    if (!window.google?.maps?.importLibrary) throw new Error('Google Maps JS API not ready');
-    await google.maps.importLibrary("maps");
-  }
-  try {
-    await ensureGoogle();
-    const gRoad = L.gridLayer.googleMutant({ type: "roadmap", maxZoom: 21 });
-    const gHybrid = L.gridLayer.googleMutant({ type: "hybrid", maxZoom: 21 });
-    const gSat = L.gridLayer.googleMutant({ type: "satellite", maxZoom: 21 });
-    map.addLayer(gHybrid);
-    const baseMaps = { "Google Roadmap": gRoad, "Google Hybrid": gHybrid, "Google Satellite": gSat, "Esri Satellite (fallback)": esriImagery, "OSM Streets (fallback)": osmStreets };
-    const overlays = { "Esri Labels (for Esri Hybrid)": esriLabels };
-    L.control.layers(baseMaps, overlays, { collapsed: false }).addTo(map);
-  } catch (e) {
-    console.warn('Google base unavailable', e);
-    L.control.layers({ "Esri Satellite": esriImagery, "OSM Streets": osmStreets }, { "Esri Labels (Hybrid)": esriLabels }, { collapsed: false }).addTo(map);
-  }
+  // Inputs
+  const byId=id=>document.getElementById(id);
+  const elRS=byId('route-start'), elRE=byId('route-end');
+  byId('toggle-panels').onclick = () => {
+    const dock = byId('bottom-dock');
+    dock.style.display = (dock.style.display==='none' ? 'flex' : 'none');
+  };
 
-  // Info panel plumbing (now in dock)
-  const elPostcode = byId('postcode'), elLatLon = byId('latlon'), elEN = byId('en');
-  function normalizeUKPostcode(str){ if(!str) return null; const s=str.toUpperCase().replace(/\s+/g,''); return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s)?s:null; }
-  async function updateInfo(lat,lon){
-    const latStr=lat.toFixed(6), lonStr=lon.toFixed(6);
-    elLatLon.textContent=`${latStr}, ${lonStr}`;
-    const [E,N]=proj4(WGS84,OSGB,[lon,lat]); elEN.textContent=`${Math.round(E)}, ${Math.round(N)}`;
-    let pc='—'; try{ const pr=await fetch(`https://api.postcodes.io/postcodes?lon=${lonStr}&lat=${latStr}&limit=1`); const pj=await pr.json(); pc=pj?.result?.[0]?.postcode||'—'; }catch{}
-    elPostcode.textContent=pc; pin.setPopupContent(pc);
-  }
-  function setPin(lat,lon,recenter=false){ if(!isNum(lat)||!isNum(lon)) return; pin.setLatLng([lat,lon]).addTo(map).openPopup(); if(recenter) map.setView([lat,lon], Math.max(map.getZoom(),18)); updateInfo(lat,lon); }
+  // Drawing (keep lightweight, optional)
+  map.pm.addControls({ position:"topleft", drawMarker:false, drawPolyline:true, drawRectangle:true, drawPolygon:true, drawCircle:false, editMode:true, dragMode:true, cutPolygon:false, removalMode:true });
 
-  // Drawing & metrics
-  const defaultStyle={color:"#00AEEF",weight:2,fillOpacity:0.18}, activeStyle={color:"#007ACC",weight:2,fillOpacity:0.20};
-  map.pm.setGlobalOptions({ snappable:true, snapDistance:20, allowSelfIntersection:false, continueDrawing:false, finishOn:'dblclick' });
-  map.pm.addControls({ position:"topleft", drawMarker:true, drawPolyline:true, drawRectangle:true, drawPolygon:true, drawCircle:true, drawCircleMarker:true, editMode:true, dragMode:true, cutPolygon:true, removalMode:true });
-  let selectedLayer=null, lastShapeLayer=null;
-  const mType=byId('m-type'), mArea=byId('m-area'), mPerim=byId('m-perim'), mLongest=byId('m-longest');
-  const isPolygonish = layer => (layer instanceof L.Polygon) || (layer instanceof L.Circle);
-  function longestEdgeMetersFromGeom(geom) {
-    let longest = 0;
-    const processRing = (ring) => {
-      const n = ring.length;
-      if (n < 2) return;
-      for (let i = 0; i < n; i++) {
-        const a = ring[i];
-        const b = ring[(i + 1) % n];
-        const km = turf.distance(a, b, { units: 'kilometers' });
-        const m = km * 1000;
-        if (m > longest) longest = m;
-      }
-    };
-    if (geom.type === 'Polygon') geom.coordinates.forEach(processRing);
-    else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(poly => poly.forEach(processRing));
-    return longest;
-  }
-  function updateMetrics(layer){
-    if(!layer || !isPolygonish(layer)){ mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; if(mLongest) mLongest.textContent='—'; return; }
-    if(layer instanceof L.Circle){
-      const r=layer.getRadius(); const area=Math.PI*r*r, peri=2*Math.PI*r;
-      mType.textContent='Circle'; mArea.textContent=`${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`; mPerim.textContent=`${peri.toFixed(2)} m`; if(mLongest) mLongest.textContent='—'; return;
-    }
-    const gj=layer.toGeoJSON(), type=gj.geometry?.type||'Feature'; mType.textContent=type;
-    if(type==='Polygon'||type==='MultiPolygon'){
-      const area=turf.area(gj); const outline=turf.polygonToLine(gj); const lengthKm=turf.length(outline,{units:'kilometers'}); const peri=lengthKm*1000;
-      mArea.textContent=`${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`; mPerim.textContent=`${peri.toFixed(2)} m`; if(mLongest) mLongest.textContent=`${longestEdgeMetersFromGeom(gj.geometry).toFixed(2)} m`;
-    } else { mArea.textContent=mPerim.textContent='—'; if(mLongest) mLongest.textContent='—'; }
-  }
-  function setSelected(layer){ if(selectedLayer&&selectedLayer.setStyle&&isPolygonish(selectedLayer)) selectedLayer.setStyle(defaultStyle); selectedLayer=layer; if(selectedLayer&&selectedLayer.setStyle&&isPolygonish(selectedLayer)) selectedLayer.setStyle(activeStyle); if(isPolygonish(layer)){ lastShapeLayer=layer; updateMetrics(layer);} else updateMetrics(null); }
-  function bindEditableHandlers(layer){ if(layer.setStyle && isPolygonish(layer)) layer.setStyle(defaultStyle);
-    if(isPolygonish(layer)){ layer.on('click',()=>{ setSelected(layer); if(layer.pm){ if(layer.pm.enabled()) layer.pm.disable(); else layer.pm.enable({allowSelfIntersection:false,snappable:true,snapDistance:20}); } });
-      layer.on('pm:edit',()=>updateMetrics(layer)); layer.on('pm:dragend',()=>updateMetrics(layer)); layer.on('pm:enable',()=>{ if(layer.setStyle) layer.setStyle(activeStyle); }); layer.on('pm:disable',()=>{ if(layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); }); updateMetrics(layer); } }
-  map.on("pm:create", e=>{ const layer=e.layer; if(layer.setStyle&&isPolygonish(layer)) layer.setStyle(defaultStyle); if(layer.pm&&layer.pm.enable&&isPolygonish(layer)) layer.pm.enable({allowSelfIntersection:false,snappable:true,snapDistance:20}); bindEditableHandlers(layer); if(isPolygonish(layer)) setSelected(layer); });
-
-  // Map clicks
-  map.on('click', e=>{
-    const t=e.originalEvent?.target;
-    if(t && t.closest && t.closest('.toolbar, #bottom-dock, .leaflet-control, #sv-panel')) return;
-    if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
-    if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
-    if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
-    if(e.originalEvent?.ctrlKey){ addViaPoint(e.latlng.lat, e.latlng.lng, 'via'); return; }
-    if(!e.originalEvent || !e.originalEvent.shiftKey) return;
-    setPin(e.latlng.lat, e.latlng.lng, false);
-  });
-
-  // Street View
-  const svPanel=byId('sv-panel');
-  let svService=null, panorama=null; const svTitle=byId('sv-title'), svBtnClose=byId('sv-close'), svBtnPop=byId('sv-popout');
-  function showSVPanel(show){ svPanel.style.display=show?'block':'none'; }
-  function ensureSV(){ if(!window.google||!google.maps) return false; if(!svService) svService=new google.maps.StreetViewService(); if(!panorama) panorama=new google.maps.StreetViewPanorama(byId('pano'),{addressControl:true,linksControl:true,panControl:true,zoomControl:true,fullscreenControl:true}); return true; }
-  function openSVAt(lat,lon){ if(!ensureSV()) return alert('Google Maps API not ready'); const loc={lat,lng:lon}; svService.getPanorama({location:loc,radius:70},(data,status)=>{ if(status==='OK'&&data?.location){ panorama.setPano(data.location.pano); panorama.setPov({heading:0,pitch:0}); panorama.setVisible(true); svTitle.textContent='Street View'; svBtnPop.onclick=()=>window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`,'_blank','noopener'); showSVPanel(true);} else alert('No Street View here.'); }); }
-  byId('btn-sv-center').addEventListener('click',()=>{ const c=map.getCenter(); openSVAt(c.lat,c.lng); });
-  byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
-  map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
-
-  // ---------- Routing (Car, road-true) with Multi-Corridor + Two-Way endpoints ----------
+  // Route layer + state
   const routeLayer=L.layerGroup().addTo(map);
-  let startMarker=null, endMarker=null;
-  const elRS=byId('route-start'), elRE=byId('route-end'), elUseGoogle=byId('use-google');
-  const elExplore=byId('explore-corridors'), elVarCount=byId('variant-count'), elBreadth=byId('variant-breadth');
-  const chkTwoWay = byId('two-way-endpoints');
+  const routeState={ start:null, end:null, polylines:[], labels:[], meta:[], activeIdx:-1 };
+  const PALETTE=['#e53935','#1e88e5'];
   const rList=byId('r-list');
-  const btnPinStart=byId('btn-pin-start'), btnPinEnd=byId('btn-pin-end'), btnSwap=byId('btn-swap'), btnRoute=byId('btn-route'), btnClearRt=byId('btn-clear-route');
-  const btnUseSelected=byId('btn-use-selected'), btnCopySelected=byId('btn-copy-selected'), btnZoomAll=byId('btn-zoom-all');
-  const chkAvoidHwy=byId('avoid-hwy'), chkAvoidTolls=byId('avoid-tolls'), chkAvoidFerries=byId('avoid-ferries');
-  const viasWrap=byId('vias'), btnClearVias=byId('clear-vias');
 
-  const routeState={ start:null, end:null, polylines:[], labels:[], meta:[], activeIdx:-1, vias:[], viaMarkers:[] };
-  const PALETTE=['#e53935','#43a047','#1e88e5','#8e24aa','#fb8c00','#039be5','#6d4c41','#c0ca33','#8d6e63','#3949ab','#00897b','#f4511e'];
+  // --- Helpers: parsing & snapping ---
+  proj4.defs('EPSG:27700','+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs');
+  const WGS84='EPSG:4326', OSGB='EPSG:27700';
 
-  // Snapping
+  function normalizeUKPostcode(str){ if(!str) return null; const s=str.toUpperCase().replace(/\s+/g,''); return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s)?s:null; }
+  async function resolvePoint(text){
+    const raw=(text||'').trim(); if(!raw) return null;
+    const parts=raw.replace(/[()]/g,'').split(/[,\s]+/).filter(Boolean);
+    if(parts.length===2 && !isNaN(+parts[0]) && !isNaN(+parts[1])){
+      const a=+parts[0], b=+parts[1];
+      if(Math.abs(a)>1000 && Math.abs(b)>1000){ const [lon,lat]=proj4(OSGB,WGS84,[a,b]); return {lat,lon,label:'E/N'}; }
+      if(Math.abs(a)<=90 && Math.abs(b)<=180){ return {lat:a,lon:b,label:'Lat/Lon'}; }
+    }
+    const maybePC=normalizeUKPostcode(raw);
+    if(maybePC){ try{ const r=await fetch(`https://api.postcodes.io/postcodes/${maybePC}`); const j=await r.json(); if(j?.status===200&&j.result) return {lat:j.result.latitude, lon:j.result.longitude, label:j.result.postcode}; }catch{} }
+    try{
+      const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
+      const r=await fetch(url,{headers:{'Accept':'application/json'}}); const j=await r.json();
+      if(j&&j.length) return {lat:+j[0].lat, lon:+j[0].lon, label:(j[0].display_name||'').split(',')[0]||'Address'};
+    }catch{}
+    return null;
+  }
+
   async function osrmNearest(lat,lon){
     try{
       const url = `https://router.project-osrm.org/nearest/v1/driving/${lon},${lat}`;
@@ -383,10 +136,10 @@
     }catch{}
     return { lat, lon };
   }
-  async function snapIfNeeded(obj){ const s=await osrmNearest(obj.lat,obj.lon); return { lat:s.lat, lon:s.lon, label: obj.label }; }
+  async function snapPoint(p){ const s=await osrmNearest(p.lat,p.lon); return { ...p, lat:s.lat, lon:s.lon }; }
 
-  // NEW: multi-nearest to detect both directions; dedupe close points
-  async function osrmNearestMulti(lat, lon, count = 3) {
+  // Multi-nearest to find two distinct anchors at endpoint (two possible directions)
+  async function osrmNearestMulti(lat, lon, count = 4) {
     try {
       const url = `https://router.project-osrm.org/nearest/v1/driving/${lon},${lat}?number=${count}`;
       const j = await fetch(url).then(r => r.json());
@@ -394,314 +147,157 @@
       return wps.map(w => Array.isArray(w?.location) ? { lat: w.location[1], lon: w.location[0] } : null).filter(Boolean);
     } catch { return []; }
   }
-  function dedupeByMeters(points, tolMeters = 12) {
+  function dedupeByMeters(points, tolMeters = 10) {
     const out = [];
     for (const p of points) {
       const ok = out.every(q => {
-        const km = turf.distance([p.lon, p.lat], [q.lon, q.lat], { units: 'kilometers' });
-        return (km * 1000) > tolMeters;
+        const m = turf.distance([p.lon,p.lat],[q.lon,q.lat],{units:'kilometers'})*1000;
+        return m > tolMeters;
       });
       if (ok) out.push(p);
     }
     return out;
   }
-  async function twoDirectionalAnchors(lat, lon) {
-    const raw = await osrmNearestMulti(lat, lon, 3);
+  async function endpointAnchors(endLat, endLon){
+    const raw = await osrmNearestMulti(endLat, endLon, 4);
     const uniq = dedupeByMeters(raw, 8);
-    const filtered = uniq.filter(p => (turf.distance([p.lon, p.lat], [lon, lat], { units: 'kilometers' }) * 1000) > 1.0);
-    filtered.sort((a, b) => {
-      const da = turf.distance([a.lon, a.lat], [lon, lat], { units: 'kilometers' });
-      const db = turf.distance([b.lon, b.lat], [lon, lat], { units: 'kilometers' });
+    // Filter out the exact snapped point (within 1 m)
+    const filtered = uniq.filter(p => (turf.distance([p.lon,p.lat],[endLon,endLat],{units:'kilometers'})*1000) > 1.0);
+    // Pick two closest distinct anchors; if only one exists → cul-de-sac
+    filtered.sort((a,b)=>{
+      const da = turf.distance([a.lon,a.lat],[endLon,endLat],{units:'kilometers'});
+      const db = turf.distance([b.lon,b.lat],[endLon,endLat],{units:'kilometers'});
       return da - db;
     });
-    return filtered.slice(0, 2);
+    return filtered.slice(0,2);
   }
 
-  function renderVias(){
-    viasWrap.innerHTML='';
-    routeState.vias.forEach((v,i)=>{
-      const chip=document.createElement('span'); chip.className='via-chip'; chip.innerHTML=`Via ${i+1} <button title="remove">✕</button>`;
-      chip.querySelector('button').onclick=()=>removeVia(i);
-      viasWrap.appendChild(chip);
-    });
-  }
-  function addViaPoint(lat,lon, label='via'){
-    routeState.vias.push({lat,lon,label});
-    const m=L.circleMarker([lat,lon],{radius:6, color:'#7b1fa2', weight:2, fillOpacity:0.6}).addTo(routeLayer).bindTooltip('Via');
-    routeState.viaMarkers.push(m);
-    renderVias();
-  }
-  function removeVia(idx){
-    routeState.vias.splice(idx,1);
-    const m=routeState.viaMarkers.splice(idx,1)[0];
-    if(m) routeLayer.removeLayer(m);
-    renderVias();
-  }
-
-  function setRoutePoint(which, lat, lon, label=''){
-    const obj={lat,lon,label};
-    const formatted=`${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-    if(which==='start'){
-      routeState.start=obj;
-      elRS.value = label?`${label} (${formatted})`:formatted;
-      if(startMarker) startMarker.setLatLng([lat,lon]); else { startMarker=L.marker([lat,lon],{draggable:true}).addTo(routeLayer).bindPopup('Start');
-        startMarker.on('dragend',async()=>{ const p=startMarker.getLatLng(); const s=await snapIfNeeded({lat:p.lat,lon:p.lng,label:'Dragged Start'}); routeState.start=s; startMarker.setLatLng([s.lat,s.lon]); elRS.value=`${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}`; }); }
-    } else {
-      routeState.end=obj;
-      elRE.value = label?`${label} (${formatted})`:formatted;
-      if(endMarker) endMarker.setLatLng([lat,lon]); else { endMarker=L.marker([lat,lon],{draggable:true}).addTo(routeLayer).bindPopup('End');
-        endMarker.on('dragend',async()=>{ const p=endMarker.getLatLng(); const s=await snapIfNeeded({lat:p.lat,lon:p.lng,label:'Dragged End'}); routeState.end=s; endMarker.setLatLng([s.lat,s.lon]); elRE.value=`${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}`; }); }
-    }
-  }
-  byId('btn-pin-start').addEventListener('click',async()=>{ const p=pin.getLatLng(); const s=await snapIfNeeded({lat:p.lat,lon:p.lng,label:'Pin'}); setRoutePoint('start',s.lat,s.lon,'Pin'); });
-  byId('btn-pin-end').addEventListener('click',async()=>{ const p=pin.getLatLng(); const s=await snapIfNeeded({lat:p.lat,lon:p.lng,label:'Pin'}); setRoutePoint('end',s.lat,s.lon,'Pin'); });
-  byId('btn-swap').addEventListener('click',()=>{ const a=routeState.start, b=routeState.end; routeState.start=b; routeState.end=a; const tmp=elRS.value; elRS.value=elRE.value; elRE.value=tmp; if(startMarker&&b) startMarker.setLatLng([b.lat,b.lon]); if(endMarker&&a) endMarker.setLatLng([a.lat,a.lon]); });
-
-  function clearRoutes(){ routeState.polylines.forEach(pl=>routeLayer.removeLayer(pl)); routeState.labels.forEach(lb=>routeLayer.removeLayer(lb)); routeState.polylines=[]; routeState.labels=[]; routeState.meta=[]; routeState.activeIdx=-1; rList.innerHTML=''; }
-
-  // Providers
-  async function fetchOSRM(start, end, vias, avoidFerries){
+  // OSRM routing
+  async function fetchOSRM(start, end, vias=[]){
     const coords = [[start.lon,start.lat], ...vias.map(v=>[v.lon,v.lat]), [end.lon,end.lat]]
       .map(pair=>pair.join(',')).join(';');
-    const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'true', steps:'true' });
-    if (avoidFerries) params.set('exclude','ferry');
+    const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'false', steps:'false' });
     const url = `https://router.project-osrm.org/route/v1/driving/${coords}?${params}`;
     const j = await fetch(url).then(r=>r.json()).catch(()=>null);
-    if (!j||!j.routes) return [];
-    return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?`via(${vias.length})`:'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
+    if (!j||!j.routes) return null;
+    const rt = j.routes[0];
+    return { distance: rt.distance, duration: rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) };
   }
 
-  function googleRouteToFullPath(route){
-    const pts = [];
-    (route.legs||[]).forEach(leg=>{
-      (leg.steps||[]).forEach(step=>{
-        const path = step.path || [];
-        for (let i=0;i<path.length;i++) pts.push([path[i].lat(), path[i].lng()]);
-      });
-    });
-    if (!pts.length && route.overview_path){
-      for (const p of route.overview_path) pts.push([p.lat(), p.lng()]);
+  // UI: markers + actions
+  let startMarker=null, endMarker=null;
+  function setRoutePoint(which, lat, lon, label=''){
+    const obj={lat,lon,label};
+    if(which==='start'){
+      routeState.start=obj;
+      elRS.value = label ? `${label} (${lat.toFixed(6)}, ${lon.toFixed(6)})` : `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+      if(startMarker) startMarker.setLatLng([lat,lon]); else startMarker=L.marker([lat,lon],{draggable:true}).addTo(routeLayer).bindPopup('Start');
+    } else {
+      routeState.end=obj;
+      elRE.value = label ? `${label} (${lat.toFixed(6)}, ${lon.toFixed(6)})` : `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+      if(endMarker) endMarker.setLatLng([lat,lon]); else endMarker=L.marker([lat,lon],{draggable:true}).addTo(routeLayer).bindPopup('End');
     }
-    return pts;
   }
+  byId('btn-pin-start').addEventListener('click',async()=>{ const p=pin.getLatLng(); const s=await snapPoint({lat:p.lat,lon:p.lng,label:'Pin'}); setRoutePoint('start',s.lat,s.lon,'Pin'); });
+  byId('btn-pin-end').addEventListener('click',async()=>{ const p=pin.getLatLng(); const s=await snapPoint({lat:p.lat,lon:p.lng,label:'Pin'}); setRoutePoint('end',s.lat,s.lon,'Pin'); });
+  byId('btn-swap').addEventListener('click',()=>{ const a=routeState.start, b=routeState.end; routeState.start=b; routeState.end=a; const tmp=elRS.value; elRS.value=elRE.value; elRE.value=tmp; if(startMarker&&b) startMarker.setLatLng([b.lat,b.lon]); if(endMarker&&a) endMarker.setLatLng([a.lat,a.lon]); });
 
-  async function fetchGoogle(start, end, vias, avoids){
-    if (!window.google?.maps) return [];
-    const svc = new google.maps.DirectionsService();
-    const req = {
-      origin: {lat:start.lat, lng:start.lon},
-      destination: {lat:end.lat, lng:end.lon},
-      travelMode: 'DRIVING',
-      provideRouteAlternatives: true,
-      avoidHighways: avoids.includes('HIGHWAYS'),
-      avoidTolls: avoids.includes('TOLLS'),
-      avoidFerries: avoids.includes('FERRIES'),
-    };
-    if (vias && vias.length){
-      req.waypoints = vias.map(v=>({ location:{lat:v.lat, lng:v.lon}, stopover:false }));
-    }
-    const res = await new Promise(resolve => svc.route(req,(r,st)=>resolve(st==='OK'?r:null)));
-    if (!res?.routes) return [];
-    return res.routes.map(r=>{
-      const path = googleRouteToFullPath(r);
-      let distance=0, duration=0;
-      (r.legs||[]).forEach(leg=>{ distance+=(leg.distance?.value||0); duration+=(leg.duration?.value||0); });
-      return { provider:'Google', tag: vias.length?`via(${vias.length})`:'base', distance, duration, coords: path };
-    });
+  map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
+  map.on('click', e=>{ if(e.originalEvent?.shiftKey){ setPin(e.latlng.lat,e.latlng.lng,false); } });
+
+  function clearRoutes(){
+    routeLayer.clearLayers();
+    if(startMarker) startMarker.addTo(routeLayer).bindPopup('Start');
+    if(endMarker) endMarker.addTo(routeLayer).bindPopup('End');
+    routeState.polylines=[]; routeState.labels=[]; routeState.meta=[]; routeState.activeIdx=-1;
+    rList.innerHTML='';
   }
 
   function hashCoords(coords){ const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]); return JSON.stringify([rounded.length, rounded.slice(0,200)]); }
-  function midpointLatLng(latlngs){ return latlngs[Math.floor(latlngs.length/2)]; }
-  function makeNumberBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:`<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
+  function midpoint(latlngs){ return latlngs[Math.floor(latlngs.length/2)]||latlngs[0]; }
+  function makeBadge(n,color,at){ const icon=L.divIcon({ className:'route-badge', html:`<div style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:12px/22px system-ui;box-shadow:0 1px 4px rgba(0,0,0,.25);">${n}</div>`, iconSize:[22,22], iconAnchor:[11,11] }); return L.marker(at,{icon}); }
+  function fmtDur(sec){ const m=Math.round(sec/60); const h=Math.floor(m/60); const r=m%60; return h?`${h}h ${r}m`:`${m} min`; }
 
-  function setActiveRoute(idx){
-    routeState.activeIdx=idx;
-    routeState.polylines.forEach((pl,i)=>{
-      pl.setStyle({weight: i===idx?6:4, opacity: i===idx?0.98:0.7, dashArray: i===idx?null:'6,6'});
-      if (i===idx && pl.bringToFront) pl.bringToFront();
-    });
-    const items = Array.from(rList.querySelectorAll('.route-item'));
-    items.forEach((el,i)=> el.classList.toggle('active', i===idx));
-    if(idx>=0 && routeState.polylines[idx]) map.fitBounds(routeState.polylines[idx].getBounds(), {padding:[30,30]});
-  }
+  function addRouteToUI(route, label){
+    const idx=routeState.polylines.length;
+    const color=PALETTE[idx%PALETTE.length];
+    const poly=L.polyline(route.coords,{color,weight:5,opacity:0.95}).addTo(routeLayer);
+    const badge=makeBadge(idx+1,color,midpoint(route.coords)).addTo(routeLayer);
 
-  function addRouteToUI(coords, meta, paletteIndex){
-    const color = PALETTE[paletteIndex % PALETTE.length];
-    const poly=L.polyline(coords,{color,weight:4,opacity:0.98}).addTo(routeLayer);
-    const mid=midpointLatLng(coords); const badge=makeNumberBadge(routeState.polylines.length+1,color,mid).addTo(routeLayer);
-
-    const km=(meta.distance/1000).toFixed(2);
-    const mins=Math.round(meta.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
-
-    const idx = routeState.polylines.length; // capture index BEFORE pushing
     const item=document.createElement('div'); item.className='route-item';
     item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
-      <div><b>${idx+1}.</b> ${km} km • ${durTxt}
-      <span class="provider-tag">${meta.provider}</span></div>`;
-    item.onclick=()=>setActiveRoute(idx);
-    poly.on('click',()=>setActiveRoute(idx));
+                    <div><b>${idx+1}.</b> ${ (route.distance/1000).toFixed(2) } km • ${ fmtDur(route.duration) }
+                    <span style="opacity:.7;margin-left:6px;">${label}</span></div>`;
+    item.onclick=()=>setActiveRoute(idx); poly.on('click',()=>setActiveRoute(idx));
 
     rList.appendChild(item);
-    routeState.polylines.push(poly);
-    routeState.labels.push(badge);
-    routeState.meta.push({...meta, color});
+    routeState.polylines.push(poly); routeState.labels.push(badge); routeState.meta.push({color,label, distance:route.distance, duration:route.duration});
   }
 
-  async function resolvePoint(text){
-    const raw=(text||'').trim(); if(!raw) return null;
-    const parts=raw.replace(/[()]/g,'').split(/[,\s]+/).filter(Boolean);
-    if(parts.length===2 && !isNaN(+parts[0]) && !isNaN(+parts[1])){
-      const a=+parts[0], b=+parts[1];
-      if(Math.abs(a)>1000 && Math.abs(b)>1000){ const [lon,lat]=proj4(OSGB,WGS84,[a,b]); return await snapIfNeeded({lat,lon,label:'E/N'}); }
-      if(Math.abs(a)<=90 && Math.abs(b)<=180){ return await snapIfNeeded({lat:a,lon:b,label:'Lat/Lon'}); }
-    }
-    const maybePC=normalizeUKPostcode(raw);
-    if(maybePC){ try{ const r=await fetch(`https://api.postcodes.io/postcodes/${maybePC}`); const j=await r.json(); if(j?.status===200&&j.result) return await snapIfNeeded({lat:j.result.latitude, lon:j.result.longitude, label:j.result.postcode}); }catch{} }
-    try{
-      const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(raw)}&countrycodes=gb&limit=1&accept-language=en-GB`;
-      const r=await fetch(url,{headers:{'Accept':'application/json'}}); const j=await r.json();
-      if(j&&j.length) return await snapIfNeeded({lat:+j[0].lat, lon:+j[0].lon, label:(j[0].display_name||'').split(',')[0]||'Address'});
-    }catch{}
-    return null;
+  function setActiveRoute(i){
+    routeState.activeIdx=i;
+    routeState.polylines.forEach((pl,ix)=>pl.setStyle({weight: ix===i?7:5, opacity: ix===i?1:0.8, dashArray: ix===i?null:'6,6'}));
+    const items=[...rList.querySelectorAll('.route-item')]; items.forEach((el,ix)=>el.classList.toggle('active',ix===i));
+    const pl=routeState.polylines[i]; if(pl) map.fitBounds(pl.getBounds(),{padding:[30,30]});
   }
 
-  // Helpers for corridor vias
-  function metersToDegLat(m){ return m/111320; }
-  function metersToDegLon(m,lat){ return m/(111320*Math.cos((lat*Math.PI)/180)); }
+  // Core: plan exactly two routes forced by ENDPOINT direction
+  async function planTwoByEndpointDirection(){
+    // Parse inputs if not set
+    if(!routeState.start){ const s = await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); routeState.start=s; }
+    if(!routeState.end){   const e = await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.');   routeState.end=e; }
 
-  function generateCorridorVias(start,end,count,breadth){
-    const result=[];
-    const lat1=start.lat, lon1=start.lon, lat2=end.lat, lon2=end.lon;
-    const dx = lon2 - lon1, dy = lat2 - lat1;
-    const L = Math.hypot(dx,dy)||1;
-    const ux = dx/L, uy = dy/L;
-    const px = -uy, py = ux;
+    // Snap both to the nearest road
+    const start = await snapPoint(routeState.start);
+    const end   = await snapPoint(routeState.end);
+    routeState.start=start; routeState.end=end;
 
-    for (let i=0;i<count;i++){
-      const frac1 = 0.33, frac2 = 0.67;
-      const side = (i%2===0) ? 1 : -1;
-      const scale = 0.5 + (i/Math.max(count-1,1)); // 0.5 .. 1.5
-      const m = breadth * scale;
-      const dlat = metersToDegLat(m*side*1.0);
-      const dlon1 = metersToDegLon(m*side*1.0, lat1 + dy*frac1);
-      const dlon2 = metersToDegLon(m*side*1.0, lat1 + dy*frac2);
-
-      const b1 = { lat: lat1 + dy*frac1, lon: lon1 + dx*frac1 };
-      const b2 = { lat: lat1 + dy*frac2, lon: lon1 + dx*frac2 };
-
-      const via1 = { lat: b1.lat + dlat*py, lon: b1.lon + dlon1*px };
-      const via2 = { lat: b2.lat + dlat*py, lon: b2.lon + dlon2*px };
-
-      result.push([via1, via2]);
-    }
-    return result;
-  }
-
-  async function planWithVias(start,end,viaList,avoids){
-    const all=[];
-    all.push({ label:'base', vias: [] });
-    for (const vs of viaList){
-      all.push({ label:`cvias(${vs.length})`, vias: vs });
-    }
-    let routes=[];
-    for (const bucket of all){
-      const snapped = [];
-      for (const v of bucket.vias){
-        const s = await snapIfNeeded({lat:v.lat, lon:v.lon, label:'corridor'});
-        snapped.push(s);
-      }
-      const osrmR = await fetchOSRM(start, end, snapped, avoids.includes('FERRIES'));
-      routes = routes.concat(osrmR);
-      if (elUseGoogle.checked){
-        const gR = await fetchGoogle(start, end, snapped, avoids);
-        routes = routes.concat(gR);
-      }
-    }
-    return routes;
-  }
-
-  // Build routes with optional two-way endpoint forcing
-  async function planRoutes(){
-    try{
-      if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
-      if(!routeState.end){ const e=await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.'); setRoutePoint('end',e.lat,e.lon,e.label); }
-      routeState.start = await snapIfNeeded(routeState.start);
-      routeState.end   = await snapIfNeeded(routeState.end);
-
-      const {start,end}=routeState; if(!start||!end) return;
+    // Find up to two distinct on-road anchors around the END (endpoint)
+    const anchors = await endpointAnchors(end.lat, end.lon);
+    if (!anchors.length){
+      // cul-de-sac or single approach only → just one route (no pre-end anchor)
+      const r = await fetchOSRM(start,end);
+      if(!r) return alert('No route found.');
       clearRoutes();
-
-      const avoids=[];
-      if (chkAvoidHwy.checked) avoids.push('HIGHWAYS');
-      if (chkAvoidTolls.checked) avoids.push('TOLLS');
-      if (chkAvoidFerries.checked) avoids.push('FERRIES');
-
-      let corridorSets = [];
-      if (elExplore.checked){
-        const count = Math.max(0, Math.min(12, parseInt(elVarCount.value||'0',10)));
-        const breadth = Math.max(100, Math.min(5000, parseInt(elBreadth.value||'1200',10)));
-        corridorSets = generateCorridorVias(start, end, count, breadth);
-      }
-
-      // NEW: two-way endpoints → get up to 2 anchors each end (skip if cul-de-sac)
-      let startAnchors = [], endAnchors = [];
-      if (chkTwoWay?.checked) {
-        startAnchors = await twoDirectionalAnchors(start.lat, start.lon); // 0..2
-        endAnchors   = await twoDirectionalAnchors(end.lat,   end.lon);   // 0..2
-      }
-      const startVariants = (startAnchors.length ? startAnchors : [null]);
-      const endVariants   = (endAnchors.length   ? endAnchors   : [null]);
-
-      let routes = [];
-      for (const sA of startVariants) {
-        for (const eA of endVariants) {
-          const dirVias = [];
-          if (sA) dirVias.push(sA);
-          if (eA) dirVias.push(eA);
-
-          // Provider alternatives with just directional vias
-          routes = routes.concat(await fetchOSRM(start, end, dirVias, avoids.includes('FERRIES')));
-          if (elUseGoogle.checked) {
-            routes = routes.concat(await fetchGoogle(start, end, dirVias, avoids));
-          }
-
-          // Corridor variants layered between anchors
-          for (const cv of corridorSets) {
-            const snappedCorridor = [];
-            for (const v of cv) {
-              const s = await snapIfNeeded({ lat: v.lat, lon: v.lon, label: 'corridor' });
-              snappedCorridor.push(s);
-            }
-            const allVias = [...(sA ? [sA] : []), ...snappedCorridor, ...(eA ? [eA] : [])];
-
-            routes = routes.concat(await fetchOSRM(start, end, allVias, avoids.includes('FERRIES')));
-            if (elUseGoogle.checked) {
-              routes = routes.concat(await fetchGoogle(start, end, allVias, avoids));
-            }
-          }
-        }
-      }
-
-      if (!routes.length){ alert('No routes. If an endpoint is a cul-de-sac, try turning off “Two-way at endpoints” or add a manual Via (Ctrl+Click).'); return; }
-
-      const seen = new Set(); let paletteIndex=0;
-      routes.sort((a,b)=>a.duration-b.duration);
-      for (const rt of routes){
-        const key = rt.provider[0] + ':' + hashCoords(rt.coords);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        addRouteToUI(rt.coords, {provider:rt.provider, distance:rt.distance, duration:rt.duration}, paletteIndex++);
-      }
+      addRouteToUI(r, 'Endpoint single approach');
       setActiveRoute(0);
-    }catch(err){
-      console.error(err); alert('Routing failed. Check points and try again.');
+      return;
     }
+
+    clearRoutes();
+
+    // Produce routes: Start → AnchorA → End (and AnchorB if exists)
+    const first = await fetchOSRM(start, end, [anchors[0]]);
+    if(first) addRouteToUI(first, 'Endpoint direction A');
+
+    if(anchors[1]){
+      const second = await fetchOSRM(start, end, [anchors[1]]);
+      // De-dupe if geometry is identical
+      if (second && hashCoords(second.coords)!==hashCoords(first?.coords||[])){
+        addRouteToUI(second, 'Endpoint direction B');
+      }
+    }
+
+    if (!routeState.polylines.length) return alert('No route candidates. The endpoint might be a hard dead-end.');
+    setActiveRoute(0);
   }
 
-  // Copy/Use/Zoom
-  function getActiveRouteCoords(){ const idx=routeState.activeIdx; if(idx==null||idx<0) return null; const pl=routeState.polylines[idx]; if(!pl) return null; const latlngs=pl.getLatLngs(); return Array.isArray(latlngs[0])?latlngs.flat():latlngs; }
-  byId('btn-use-selected').addEventListener('click',()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const poly=L.polyline(pts,{color:'#007ACC',weight:3,opacity:0.98}).addTo(map); if(poly.pm&&poly.pm.enable) poly.pm.enable({snappable:true,snapDistance:20}); });
-  byId('btn-copy-selected').addEventListener('click', async ()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const coords=pts.map(ll=>[ll.lng,ll.lat]); const text=JSON.stringify(coords); if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(text); else { const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.top='-9999px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); ta.remove(); } });
+  // Buttons
+  byId('btn-route').addEventListener('click', planTwoByEndpointDirection);
+  byId('btn-clear-route').addEventListener('click', clearRoutes);
+  byId('btn-use-selected').addEventListener('click',()=>{
+    const i=routeState.activeIdx; if(i==null||i<0) return alert('Select a route first.');
+    const latlngs=routeState.polylines[i].getLatLngs(); const poly=L.polyline(latlngs,{color:'#007ACC',weight:3,opacity:1}).addTo(map);
+    if(poly.pm&&poly.pm.enable) poly.pm.enable({snappable:true,snapDistance:20});
+  });
+  byId('btn-copy-selected').addEventListener('click', async ()=>{
+    const i=routeState.activeIdx; if(i==null||i<0) return alert('Select a route first.');
+    const latlngs=routeState.polylines[i].getLatLngs();
+    const coords=latlngs.map(ll=>[ll.lng,ll.lat]);
+    const text=JSON.stringify(coords);
+    if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+    else { const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.top='-9999px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  });
   byId('btn-zoom-all').addEventListener('click',()=>{
     const groups = routeState.polylines.filter(Boolean);
     if(!groups.length) return;
@@ -710,11 +306,8 @@
     map.fitBounds(bounds, {padding:[30,30]});
   });
 
-  byId('btn-route').addEventListener('click', ()=>{ planRoutes(); });
-  byId('btn-clear-route').addEventListener('click', ()=>{ clearRoutes(); });
-
-  // Initial info
-  (async()=>{ await updateInfo(centre[0], centre[1]); })();
+  // Initial pin info + help
+  setPin(centre[0], centre[1], false);
 </script>
 
 <noscript>Enable JavaScript to view the map.</noscript>
