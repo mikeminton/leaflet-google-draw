@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Car Navigation — Two-Way Start-from-End (Road‑True)</title>
+  <title>Leaflet + Car Navigation — Two-Way Start-from-End (Locked Directions)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -50,7 +50,6 @@
     .leaflet-control { z-index: 1200 !important; }
     .leaflet-top.leaflet-right .leaflet-control-layers { margin-top: 120px !important; }
 
-    /* Bottom dock */
     .bottom-dock {
       position: absolute; z-index: 1400; left: 10px; right: 10px; bottom: 10px;
       display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap;
@@ -75,7 +74,6 @@
     .via-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1px solid #ddd; border-radius:14px; margin-right:6px; }
     .via-chip button { border:none; background:transparent; cursor:pointer; }
 
-    /* Street View */
     #sv-panel { position: absolute; z-index: 1450; right: 10px; bottom: 10px; width: 420px; height: 300px;
       background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,.18); display: none; overflow: hidden; border: 1px solid #ddd; resize: both; }
     #sv-header { height: 36px; display:flex; align-items:center; justify-content:space-between; padding: 0 10px; border-bottom: 1px solid #eee; background:#fafafa; font: 13px system-ui; }
@@ -119,31 +117,14 @@
     <!-- Car routing -->
     <input id="route-start" class="mini" type="text" placeholder="Start: address / 52.6,-2.7 / 349000,306000" />
     <input id="route-end"   class="mini" type="text" placeholder="End: address / 52.7,-2.8 / 340000,300000" />
-    <label title="Avoid motorways (Google only)"><input type="checkbox" id="avoid-hwy"> Avoid motorways</label>
-    <label title="Avoid tolls (Google only)"><input type="checkbox" id="avoid-tolls"> Avoid tolls</label>
-    <label title="Avoid ferries"><input type="checkbox" id="avoid-ferries"> Avoid ferries</label>
     <button id="btn-pin-start" title="Use current pin as Start">Pin→Start</button>
     <button id="btn-pin-end" title="Use current pin as End">Pin→End</button>
     <button id="btn-swap" title="Swap start/end">Swap</button>
     <button id="btn-route" title="Calculate routes">Route</button>
     <button id="btn-clear-route" title="Clear routes">Clear</button>
-    <label title="Use Google Directions (more alternatives)"><input type="checkbox" id="use-google" checked> Use Google</label>
-
-    <span class="spacer"></span>
-
-    <!-- Multi‑corridor controls (visually kept, ignored by logic) -->
-    <label title="Explore extra corridors by inserting snapped via control points">
-      <input type="checkbox" id="explore-corridors" checked> Explore
-    </label>
-    <label title="How many corridor variants to try (ignored)">
-      Variants: <input id="variant-count" type="number" min="0" max="12" step="1" value="6" style="width:64px">
-    </label>
-    <label title="How far to push each corridor sideways (ignored)">
-      Breadth: <input id="variant-breadth" type="number" min="100" max="5000" step="100" value="1200" style="width:72px"> m
-    </label>
+    <label title="Use Google Directions"><input type="checkbox" id="use-google" checked> Use Google</label>
   </div>
 
-  <!-- Bottom dock -->
   <div class="bottom-dock" id="bottom-dock">
     <div class="card metrics" id="metrics">
       <h4>DRAWN POLYGON INFORMATION:</h4>
@@ -166,7 +147,7 @@
         <button id="btn-copy-selected" class="btn">Copy Coords</button>
         <button id="btn-zoom-all" class="btn">Zoom All</button>
       </div>
-      <div class="row" style="opacity:.8">Road‑true geometry. Press <b>P</b> to toggle dock. Right‑click to set Start/End, Ctrl+Click to add a Via.</div>
+      <div class="row" style="opacity:.8">Road‑true geometry. Press <b>P</b> to toggle dock. Right‑click: set Start/End, Ctrl+Click: add a Via.</div>
     </div>
 
     <div class="card infobox" id="info">
@@ -178,7 +159,6 @@
     </div>
   </div>
 
-  <!-- Street View -->
   <div id="sv-panel">
     <div id="sv-header">
       <div id="sv-title">Street View</div>
@@ -191,7 +171,6 @@
   </div>
 </div>
 
-<!-- Runtime Google API key loader -->
 <script id="gmaps-loader">
 (function () {
   const STORAGE = 'gmapsApiKey';
@@ -230,19 +209,16 @@
 </script>
 
 <script type="module">
-  // Config
   const centre = [52.677027, -2.773167];
   proj4.defs('EPSG:27700', '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs');
   const WGS84 = 'EPSG:4326', OSGB='EPSG:27700';
   const byId = id => document.getElementById(id);
   const isNum = v => typeof v === 'number' && isFinite(v) && !isNaN(v);
 
-  // Panels toggle
   const bottomDock = byId('bottom-dock');
   byId('toggle-panels').onclick = () => { bottomDock.style.display = (bottomDock.style.display==='none' ? 'flex' : 'none'); };
   document.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='p') byId('toggle-panels').click(); });
 
-  // Basemaps
   const esriImagery = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {maxZoom:20, attribution:"Imagery © Esri"});
   const esriLabels  = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {maxZoom:20, attribution:"Labels © Esri"});
   const osmStreets  = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:20, attribution:"© OpenStreetMap contributors"});
@@ -254,10 +230,8 @@
   }
   blockEventsFor('#ui-toolbar, #bottom-dock, #sv-panel, .leaflet-control-container');
 
-  // Pin
   let pin = L.marker(centre).addTo(map).bindPopup("SY3 0NS").openPopup();
 
-  // Google layers (async)
   async function ensureGoogle() {
     for (let i=0;i<400;i++) { if (window.google?.maps?.importLibrary) break; await new Promise(r=>setTimeout(r,25)); }
     if (!window.google?.maps?.importLibrary) throw new Error('Google Maps JS API not ready');
@@ -277,7 +251,6 @@
     L.control.layers({ "Esri Satellite": esriImagery, "OSM Streets": osmStreets }, { "Esri Labels (Hybrid)": esriLabels }, { collapsed: false }).addTo(map);
   }
 
-  // Info panel
   const elPostcode = byId('postcode'), elLatLon = byId('latlon'), elEN = byId('en');
   function normalizeUKPostcode(str){ if(!str) return null; const s=str.toUpperCase().replace(/\s+/g,''); return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s)?s:null; }
   async function updateInfo(lat,lon){
@@ -289,71 +262,17 @@
   }
   function setPin(lat,lon,recenter=false){ if(!isNum(lat)||!isNum(lon)) return; pin.setLatLng([lat,lon]).addTo(map).openPopup(); if(recenter) map.setView([lat,lon], Math.max(map.getZoom(),18)); updateInfo(lat,lon); }
 
-  // Drawing & metrics
-  const defaultStyle={color:"#00AEEF",weight:2,fillOpacity:0.18}, activeStyle={color:"#007ACC",weight:2,fillOpacity:0.20};
   map.pm.setGlobalOptions({ snappable:true, snapDistance:20, allowSelfIntersection:false, continueDrawing:false, finishOn:'dblclick' });
   map.pm.addControls({ position:"topleft", drawMarker:true, drawPolyline:true, drawRectangle:true, drawPolygon:true, drawCircle:true, drawCircleMarker:true, editMode:true, dragMode:true, cutPolygon:true, removalMode:true });
-  let selectedLayer=null, lastShapeLayer=null;
-  const mType=byId('m-type'), mArea=byId('m-area'), mPerim=byId('m-perim'), mLongest=byId('m-longest');
-  const isPolygonish = layer => (layer instanceof L.Polygon) || (layer instanceof L.Circle);
-  function longestEdgeMetersFromGeom(geom) {
-    let longest = 0;
-    const processRing = (ring) => {
-      const n = ring.length;
-      if (n < 2) return;
-      for (let i = 0; i < n; i++) {
-        const a = ring[i];
-        const b = ring[(i + 1) % n];
-        const km = turf.distance(a, b, { units: 'kilometers' });
-        const m = km * 1000;
-        if (m > longest) longest = m;
-      }
-    };
-    if (geom.type === 'Polygon') geom.coordinates.forEach(processRing);
-    else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(poly => poly.forEach(processRing));
-    return longest;
-  }
-  function updateMetrics(layer){
-    if(!layer || !isPolygonish(layer)){ mType.textContent='—'; mArea.textContent='—'; mPerim.textContent='—'; if(mLongest) mLongest.textContent='—'; return; }
-    if(layer instanceof L.Circle){
-      const r=layer.getRadius(); const area=Math.PI*r*r, peri=2*Math.PI*r;
-      mType.textContent='Circle'; mArea.textContent=`${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`; mPerim.textContent=`${peri.toFixed(2)} m`; if(mLongest) mLongest.textContent='—'; return;
-    }
-    const gj=layer.toGeoJSON(), type=gj.geometry?.type||'Feature'; mType.textContent=type;
-    if(type==='Polygon'||type==='MultiPolygon'){
-      const area=turf.area(gj); const outline=turf.polygonToLine(gj); const lengthKm=turf.length(outline,{units:'kilometers'}); const peri=lengthKm*1000;
-      mArea.textContent=`${area.toFixed(0)} m²  (${(area/10000).toFixed(4)} ha)`; mPerim.textContent=`${peri.toFixed(2)} m`; if(mLongest) mLongest.textContent=`${longestEdgeMetersFromGeom(gj.geometry).toFixed(2)} m`;
-    } else { mArea.textContent=mPerim.textContent='—'; if(mLongest) mLongest.textContent='—'; }
-  }
-  function setSelected(layer){ if(selectedLayer&&selectedLayer.setStyle&&isPolygonish(selectedLayer)) selectedLayer.setStyle(defaultStyle); selectedLayer=layer; if(selectedLayer&&selectedLayer.setStyle&&isPolygonish(selectedLayer)) selectedLayer.setStyle(activeStyle); if(isPolygonish(layer)){ lastShapeLayer=layer; updateMetrics(layer);} else updateMetrics(null); }
-  function bindEditableHandlers(layer){ if(layer.setStyle && isPolygonish(layer)) layer.setStyle(defaultStyle);
-    if(isPolygonish(layer)){ layer.on('click',()=>{ setSelected(layer); if(layer.pm){ if(layer.pm.enabled()) layer.pm.disable(); else layer.pm.enable({allowSelfIntersection:false,snappable:true,snapDistance:20}); } });
-      layer.on('pm:edit',()=>updateMetrics(layer)); layer.on('pm:dragend',()=>updateMetrics(layer)); layer.on('pm:enable',()=>{ if(layer.setStyle) layer.setStyle(activeStyle); }); layer.on('pm:disable',()=>{ if(layer.setStyle) layer.setStyle(defaultStyle); updateMetrics(layer); }); updateMetrics(layer); } }
-  map.on("pm:create", e=>{ const layer=e.layer; if(layer.setStyle&&isPolygonish(layer)) layer.setStyle(defaultStyle); if(layer.pm&&layer.pm.enable&&isPolygonish(layer)) layer.pm.enable({allowSelfIntersection:false,snappable:true,snapDistance:20}); bindEditableHandlers(layer); if(isPolygonish(layer)) setSelected(layer); });
-
-  // Map clicks
-  map.on('click', e=>{
-    const t=e.originalEvent?.target;
-    if(t && t.closest && t.closest('.toolbar, #bottom-dock, .leaflet-control, #sv-panel')) return;
-    if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
-    if (map.pm.globalEditEnabled && map.pm.globalEditEnabled()) return;
-    if (map.pm.globalDragModeEnabled && map.pm.globalDragModeEnabled()) return;
-    if(e.originalEvent?.ctrlKey){ addViaPoint(e.latlng.lat, e.latlng.lng, 'via'); return; }
-    if(!e.originalEvent || !e.originalEvent.shiftKey) return;
-    setPin(e.latlng.lat, e.latlng.lng, false);
-  });
 
   // Street View
-  let svService=null, panorama=null; const svTitle=byId('sv-title'), svBtnClose=byId('sv-close'), svBtnPop=byId('sv-popout');
-  const svPanel=byId('sv-panel');
-  function showSVPanel(show){ svPanel.style.display=show?'block':'none'; }
-  function ensureSV(){ if(!window.google||!google.maps) return false; if(!svService) svService=new google.maps.StreetViewService(); if(!panorama) panorama=new google.maps.StreetViewPanorama(byId('pano'),{addressControl:true,linksControl:true,panControl:true,zoomControl:true,fullscreenControl:true}); return true; }
-  function openSVAt(lat,lon){ if(!ensureSV()) return alert('Google Maps API not ready'); const loc={lat,lng:lon}; svService.getPanorama({location:loc,radius:70},(data,status)=>{ if(status==='OK'&&data?.location){ panorama.setPano(data.location.pano); panorama.setPov({heading:0,pitch:0}); panorama.setVisible(true); svTitle.textContent='Street View'; svBtnPop.onclick=()=>window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`,'_blank','noopener'); showSVPanel(true);} else alert('No Street View here.'); }); }
+  let svService=null, panorama=null; const svPanel=byId('sv-panel'), svTitle=byId('sv-title'), svBtnPop=byId('sv-popout');
+  function ensureSV(){ if(!window.google||!google.maps) return false; if(!svService) svService=new google.maps.StreetViewService(); if(!panorama) panorama=new google.maps.StreetViewPanorama(byId('pano'),{}); return true; }
+  function openSVAt(lat,lon){ if(!ensureSV()) return alert('Google Maps API not ready'); const loc={lat,lng:lon}; svService.getPanorama({location:loc,radius:70},(data,status)=>{ if(status==='OK'&&data?.location){ panorama.setPano(data.location.pano); panorama.setVisible(true); svTitle.textContent='Street View'; svBtnPop.onclick=()=>window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`,'_blank','noopener'); svPanel.style.display='block'; } else alert('No Street View here.'); }); }
   byId('btn-sv-center').addEventListener('click',()=>{ const c=map.getCenter(); openSVAt(c.lat,c.lng); });
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
   map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
 
-  // ---------- Routing (Car, road‑true) ----------
   const routeLayer=L.layerGroup().addTo(map);
   let startMarker=null, endMarker=null;
   const elRS=byId('route-start'), elRE=byId('route-end'), elUseGoogle=byId('use-google');
@@ -363,9 +282,8 @@
   const viasWrap=byId('vias'), btnClearVias=byId('clear-vias');
 
   const routeState={ start:null, end:null, polylines:[], labels:[], meta:[], activeIdx:-1, vias:[], viaMarkers:[] };
-  const PALETTE=['#e53935','#43a047','#1e88e5','#8e24aa','#fb8c00','#039be5','#6d4c41','#c0ca33','#8d6e63','#3949ab','#00897b','#f4511e'];
+  const PALETTE=['#e53935','#43a047','#1e88e5','#8e24aa'];
 
-  // Snapping
   async function osrmNearest(lat,lon){
     try{
       const url = `https://router.project-osrm.org/nearest/v1/driving/${lon},${lat}`;
@@ -419,25 +337,20 @@
 
   function clearRoutes(){ routeState.polylines.forEach(pl=>routeLayer.removeLayer(pl)); routeState.labels.forEach(lb=>routeLayer.removeLayer(lb)); routeState.polylines=[]; routeState.labels=[]; routeState.meta=[]; routeState.activeIdx=-1; rList.innerHTML=''; }
 
-  // Providers (SINGLE best route per call) with optional OSRM bearings
   async function fetchOSRM(origin, dest, vias, bearings){
     const coordsArr = [[origin.lon,origin.lat], ...vias.map(v=>[v.lon,v.lat]), [dest.lon,dest.lat]];
     const coords = coordsArr.map(pair=>pair.join(',')).join(';');
-
-    const params = new URLSearchParams({
-      overview:'full', geometries:'geojson', alternatives:'false', steps:'true'
-    });
-
+    const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'false', steps:'true' });
     if (Array.isArray(bearings) && bearings.length === coordsArr.length){
-      const b = bearings.map(v => v ? `${Math.round(v.angle)},${Math.round(v.range||30)}` : '').join(';');
+      const b = bearings.map(v => v ? `${Math.round(v.angle)},${Math.round(v.range||20)}` : '').join(';');
       params.set('bearings', b);
     }
-
     const url = `https://router.project-osrm.org/route/v1/driving/${coords}?${params}`;
     const j = await fetch(url).then(r=>r.json()).catch(()=>null);
     if (!j||!j.routes) return null;
     const rt = j.routes[0];
-    return { provider:'OSRM', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) };
+    return { provider:'OSRM', distance:rt.distance, duration:rt.duration,
+             coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) };
   }
 
   function googleRouteToFullPath(route){
@@ -462,6 +375,7 @@
       destination: {lat:dest.lat, lng:dest.lon},
       travelMode: 'DRIVING',
       provideRouteAlternatives: false,
+      optimizeWaypoints: false
     };
     if (vias && vias.length){
       req.waypoints = vias.map(v=>({ location:{lat:v.lat, lng:v.lon}, stopover:false }));
@@ -490,9 +404,8 @@
     if(idx>=0 && routeState.polylines[idx]) map.fitBounds(routeState.polylines[idx].getBounds(), {padding:[30,30]});
   }
 
-  const PALETTE_LOCAL=['#e53935','#43a047','#1e88e5','#8e24aa'];
   function addRouteToUI(coords, meta, paletteIndex){
-    const color = PALETTE_LOCAL[paletteIndex % PALETTE_LOCAL.length];
+    const color = PALETTE[paletteIndex % PALETTE.length];
     const poly=L.polyline(coords,{color,weight:4,opacity:0.98}).addTo(routeLayer);
     const mid=midpointLatLng(coords); const badge=makeNumberBadge(routeState.polylines.length+1,color,mid).addTo(routeLayer);
 
@@ -531,7 +444,6 @@
     return null;
   }
 
-  // === TWO-WAY ROUTING: force initial direction along road from END ===
   function toRad(d){ return d*Math.PI/180; }
   function toDeg(r){ return r*180/Math.PI; }
   function destPoint(lat, lon, headingDeg, meters){
@@ -548,68 +460,47 @@
     const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
     return (toDeg(Math.atan2(y,x))+360)%360;
   }
-  async function makeEndDirectionVias(end, start){
+
+  async function makeLockedDirectionVias(end, start){
     const baseBear = bearingDegrees(end, start);
-    const forwardRaw  = destPoint(end.lat, end.lon,  baseBear, 50);
-    const backwardRaw = destPoint(end.lat, end.lon, (baseBear+180)%360, 70);
-    const f = await snapIfNeeded(forwardRaw);
-    const b = await snapIfNeeded(backwardRaw);
-    return { forward: f, backward: b, baseBear };
+    const f1raw = destPoint(end.lat, end.lon,  baseBear, 80);
+    const f2raw = destPoint(end.lat, end.lon,  baseBear, 260);
+    const b1raw = destPoint(end.lat, end.lon, (baseBear+180)%360, 120);
+    const b2raw = destPoint(end.lat, end.lon, (baseBear+180)%360, 380);
+    const f1 = await snapIfNeeded(f1raw);
+    const f2 = await snapIfNeeded(f2raw);
+    const b1 = await snapIfNeeded(b1raw);
+    const b2 = await snapIfNeeded(b2raw);
+    return { baseBear, forwardVias:[f1,f2], backwardVias:[b1,b2] };
   }
 
-  async function planTwoWay(){
+  async function planTwoWayLocked(){
     if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
     if(!routeState.end){   const e=await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.');   setRoutePoint('end',e.lat,e.lon,e.label); }
-
     routeState.start = await snapIfNeeded(routeState.start);
     routeState.end   = await snapIfNeeded(routeState.end);
-
     const START = routeState.start;
     const END   = routeState.end;
-
     clearRoutes();
-
-    const { forward, backward, baseBear } = await makeEndDirectionVias(END, START);
-
-    // FROM END → START
+    const { baseBear, forwardVias, backwardVias } = await makeLockedDirectionVias(END, START);
     const origin = END, dest = START;
-
     const results = [];
-
-    // OSRM forward (towards START)
-    const osrmForward = await fetchOSRM(
-      origin, dest, [forward],
-      [{angle: baseBear, range: 40}, null, null]
-    );
-    if (osrmForward) results.push(osrmForward);
-
-    // OSRM backward (away from START = opposite direction)
-    const osrmBackward = await fetchOSRM(
-      origin, dest, [backward],
-      [{angle: (baseBear+180)%360, range: 40}, null, null]
-    );
-    if (osrmBackward) results.push(osrmBackward);
-
-    // Google forward/backward (no bearings support)
+    const osrmF = await fetchOSRM(origin, dest, forwardVias, [{angle: baseBear, range: 20}, {angle: baseBear, range: 25}, null, null]);
+    if (osrmF) results.push(osrmF);
+    const backAngle = (baseBear+180)%360;
+    const osrmB = await fetchOSRM(origin, dest, backwardVias, [{angle: backAngle, range: 20}, {angle: backAngle, range: 25}, null, null]);
+    if (osrmB) results.push(osrmB);
     if (elUseGoogle.checked){
-      const gF = await fetchGoogle(origin, dest, [forward]);
+      const gF = await fetchGoogle(origin, dest, forwardVias);
       if (gF) results.push(gF);
-      const gB = await fetchGoogle(origin, dest, [backward]);
+      const gB = await fetchGoogle(origin, dest, backwardVias);
       if (gB) results.push(gB);
     }
-
-    if (!results.length){ alert('No routes found. Try moving END/START to the nearest road.'); return; }
-
-    // Keep exactly two per provider (fastest first)
+    if (!results.length){ alert('No routes found. Try nudging the END closer to the carriageway.'); return; }
     const byProv = { OSRM:[], Google:[] };
     for (const r of results) byProv[r.provider]?.push(r);
     for (const k of Object.keys(byProv)) byProv[k].sort((a,b)=>a.duration-b.duration);
-
-    const finalRoutes = [
-      ...byProv.OSRM.slice(0,2),
-      ...byProv.Google.slice(0,2)
-    ].filter(Boolean);
-
+    const finalRoutes = [...byProv.OSRM.slice(0,2), ...byProv.Google.slice(0,2)].filter(Boolean);
     const seen = new Set(); let paletteIndex=0;
     for (const rt of finalRoutes){
       const key = rt.provider[0] + ':' + hashCoords(rt.coords);
@@ -620,7 +511,6 @@
     if (routeState.polylines.length) setActiveRoute(0);
   }
 
-  // Copy/Use/Zoom
   function getActiveRouteCoords(){ const idx=routeState.activeIdx; if(idx==null||idx<0) return null; const pl=routeState.polylines[idx]; if(!pl) return null; const latlngs=pl.getLatLngs(); return Array.isArray(latlngs[0])?latlngs.flat():latlngs; }
   byId('btn-use-selected').addEventListener('click',()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const poly=L.polyline(pts,{color:'#007ACC',weight:3,opacity:0.98}).addTo(map); if(poly.pm&&poly.pm.enable) poly.pm.enable({snappable:true,snapDistance:20}); });
   byId('btn-copy-selected').addEventListener('click', async ()=>{ const pts=getActiveRouteCoords(); if(!pts||!pts.length) return alert('Select a route first.'); const coords=pts.map(ll=>[ll.lng,ll.lat]); const text=JSON.stringify(coords); if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(text); else { const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.top='-9999px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); ta.remove(); } });
@@ -632,11 +522,8 @@
     map.fitBounds(bounds, {padding:[30,30]});
   });
 
-  // Hook buttons (use two-way logic)
-  byId('btn-route').addEventListener('click', ()=>{ planTwoWay(); });
+  byId('btn-route').addEventListener('click', ()=>{ planTwoWayLocked(); });
   byId('btn-clear-route').addEventListener('click', ()=>{ clearRoutes(); });
-
-  // Initial info
   (async()=>{ await updateInfo(centre[0], centre[1]); })();
 </script>
 
