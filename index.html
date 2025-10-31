@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Car Navigation — Multi-Corridor Alternatives (Road-True)</title>
+  <title>Leaflet + Car Navigation — Two-Way Start-from-End (Road‑True)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -131,19 +131,19 @@
 
     <span class="spacer"></span>
 
-    <!-- NEW: Multi-corridor exploration controls (ignored by logic on purpose) -->
+    <!-- Multi‑corridor controls (visually kept, ignored by logic) -->
     <label title="Explore extra corridors by inserting snapped via control points">
       <input type="checkbox" id="explore-corridors" checked> Explore
     </label>
-    <label title="How many corridor variants to try (in addition to provider alternatives)">
+    <label title="How many corridor variants to try (ignored)">
       Variants: <input id="variant-count" type="number" min="0" max="12" step="1" value="6" style="width:64px">
     </label>
-    <label title="How far to push each corridor sideways (meters). Larger = further off the direct line.">
+    <label title="How far to push each corridor sideways (ignored)">
       Breadth: <input id="variant-breadth" type="number" min="100" max="5000" step="100" value="1200" style="width:72px"> m
     </label>
   </div>
 
-  <!-- Bottom dock: METRICS + ROUTES + LOCATION together -->
+  <!-- Bottom dock -->
   <div class="bottom-dock" id="bottom-dock">
     <div class="card metrics" id="metrics">
       <h4>DRAWN POLYGON INFORMATION:</h4>
@@ -162,11 +162,11 @@
       <div class="row">Vias (Ctrl+Click to add): <span id="vias"></span> <button id="clear-vias" class="btn">Clear vias</button></div>
       <div id="r-list" class="row"></div>
       <div class="row" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
-        <button id="btn-use-selected" class="btn" title="Add the selected route to drawings">Use Selected</button>
-        <button id="btn-copy-selected" class="btn" title="Copy selected route coordinates">Copy Coords</button>
-        <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
+        <button id="btn-use-selected" class="btn">Use Selected</button>
+        <button id="btn-copy-selected" class="btn">Copy Coords</button>
+        <button id="btn-zoom-all" class="btn">Zoom All</button>
       </div>
-      <div class="row" style="opacity:.8">Road-true geometry. Press <b>P</b> to toggle dock. Right-click to set Start/End, Ctrl+Click to add a Via.</div>
+      <div class="row" style="opacity:.8">Road‑true geometry. Press <b>P</b> to toggle dock. Right‑click to set Start/End, Ctrl+Click to add a Via.</div>
     </div>
 
     <div class="card infobox" id="info">
@@ -174,7 +174,7 @@
       <div class="row">Postcode: <code id="postcode">—</code></div>
       <div class="row">Lat/Lon: <code id="latlon">—</code></div>
       <div class="row">Easting/Northing: <code id="en">—</code></div>
-      <div class="row" style="opacity:.8">Shift+Click: drop pin • Ctrl+Click: add via • Alt+Click: Street View • Right-click: set Start/End</div>
+      <div class="row" style="opacity:.8">Shift+Click: drop pin • Ctrl+Click: add via • Alt+Click: Street View • Right‑click: set Start/End</div>
     </div>
   </div>
 
@@ -191,7 +191,7 @@
   </div>
 </div>
 
-<!-- Runtime Google API key loader (Option B) -->
+<!-- Runtime Google API key loader -->
 <script id="gmaps-loader">
 (function () {
   const STORAGE = 'gmapsApiKey';
@@ -277,7 +277,7 @@
     L.control.layers({ "Esri Satellite": esriImagery, "OSM Streets": osmStreets }, { "Esri Labels (Hybrid)": esriLabels }, { collapsed: false }).addTo(map);
   }
 
-  // Info panel plumbing
+  // Info panel
   const elPostcode = byId('postcode'), elLatLon = byId('latlon'), elEN = byId('en');
   function normalizeUKPostcode(str){ if(!str) return null; const s=str.toUpperCase().replace(/\s+/g,''); return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s)?s:null; }
   async function updateInfo(lat,lon){
@@ -345,6 +345,7 @@
 
   // Street View
   let svService=null, panorama=null; const svTitle=byId('sv-title'), svBtnClose=byId('sv-close'), svBtnPop=byId('sv-popout');
+  const svPanel=byId('sv-panel');
   function showSVPanel(show){ svPanel.style.display=show?'block':'none'; }
   function ensureSV(){ if(!window.google||!google.maps) return false; if(!svService) svService=new google.maps.StreetViewService(); if(!panorama) panorama=new google.maps.StreetViewPanorama(byId('pano'),{addressControl:true,linksControl:true,panControl:true,zoomControl:true,fullscreenControl:true}); return true; }
   function openSVAt(lat,lon){ if(!ensureSV()) return alert('Google Maps API not ready'); const loc={lat,lng:lon}; svService.getPanorama({location:loc,radius:70},(data,status)=>{ if(status==='OK'&&data?.location){ panorama.setPano(data.location.pano); panorama.setPov({heading:0,pitch:0}); panorama.setVisible(true); svTitle.textContent='Street View'; svBtnPop.onclick=()=>window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${data.location.latLng.lat()},${data.location.latLng.lng()}`,'_blank','noopener'); showSVPanel(true);} else alert('No Street View here.'); }); }
@@ -352,7 +353,7 @@
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
   map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
 
-  // ---------- Routing (Car, road-true) ----------
+  // ---------- Routing (Car, road‑true) ----------
   const routeLayer=L.layerGroup().addTo(map);
   let startMarker=null, endMarker=null;
   const elRS=byId('route-start'), elRE=byId('route-end'), elUseGoogle=byId('use-google');
@@ -377,7 +378,6 @@
   async function snapIfNeeded(obj){ const s=await osrmNearest(obj.lat,obj.lon); return { lat:s.lat, lon:s.lon, label: obj.label }; }
 
   function renderVias(){
-    // Keep UI, but we won’t use manual vias in the 2-way override
     viasWrap.innerHTML='';
     routeState.vias.forEach((v,i)=>{
       const chip=document.createElement('span'); chip.className='via-chip'; chip.innerHTML=`Via ${i+1} <button title="remove">✕</button>`;
@@ -419,11 +419,20 @@
 
   function clearRoutes(){ routeState.polylines.forEach(pl=>routeLayer.removeLayer(pl)); routeState.labels.forEach(lb=>routeLayer.removeLayer(lb)); routeState.polylines=[]; routeState.labels=[]; routeState.meta=[]; routeState.activeIdx=-1; rList.innerHTML=''; }
 
-  // Providers (request a SINGLE best route each time)
-  async function fetchOSRM(origin, dest, vias){
-    const coords = [[origin.lon,origin.lat], ...vias.map(v=>[v.lon,v.lat]), [dest.lon,dest.lat]]
-      .map(pair=>pair.join(',')).join(';');
-    const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'false', steps:'true' });
+  // Providers (SINGLE best route per call) with optional OSRM bearings
+  async function fetchOSRM(origin, dest, vias, bearings){
+    const coordsArr = [[origin.lon,origin.lat], ...vias.map(v=>[v.lon,v.lat]), [dest.lon,dest.lat]];
+    const coords = coordsArr.map(pair=>pair.join(',')).join(';');
+
+    const params = new URLSearchParams({
+      overview:'full', geometries:'geojson', alternatives:'false', steps:'true'
+    });
+
+    if (Array.isArray(bearings) && bearings.length === coordsArr.length){
+      const b = bearings.map(v => v ? `${Math.round(v.angle)},${Math.round(v.range||30)}` : '').join(';');
+      params.set('bearings', b);
+    }
+
     const url = `https://router.project-osrm.org/route/v1/driving/${coords}?${params}`;
     const j = await fetch(url).then(r=>r.json()).catch(()=>null);
     if (!j||!j.routes) return null;
@@ -461,7 +470,6 @@
     if (!res?.routes?.length) return null;
     const r = res.routes[0];
     const path = googleRouteToFullPath(r);
-    // combine legs for totals
     let distance=0, duration=0;
     (r.legs||[]).forEach(leg=>{ distance+=(leg.distance?.value||0); duration+=(leg.duration?.value||0); });
     return { provider:'Google', distance, duration, coords: path };
@@ -482,8 +490,9 @@
     if(idx>=0 && routeState.polylines[idx]) map.fitBounds(routeState.polylines[idx].getBounds(), {padding:[30,30]});
   }
 
+  const PALETTE_LOCAL=['#e53935','#43a047','#1e88e5','#8e24aa'];
   function addRouteToUI(coords, meta, paletteIndex){
-    const color = PALETTE[paletteIndex % PALETTE.length];
+    const color = PALETTE_LOCAL[paletteIndex % PALETTE_LOCAL.length];
     const poly=L.polyline(coords,{color,weight:4,opacity:0.98}).addTo(routeLayer);
     const mid=midpointLatLng(coords); const badge=makeNumberBadge(routeState.polylines.length+1,color,mid).addTo(routeLayer);
 
@@ -522,14 +531,11 @@
     return null;
   }
 
-  // === TWO-WAY ROUTING OVERRIDE (from END -> START, two directions off END) ===
+  // === TWO-WAY ROUTING: force initial direction along road from END ===
   function toRad(d){ return d*Math.PI/180; }
   function toDeg(r){ return r*180/Math.PI; }
   function destPoint(lat, lon, headingDeg, meters){
-    // Simple geodesic step using equirectangular approximation (fine at small distances)
-    const R=6371000;
-    const brng=toRad(headingDeg);
-    const d=meters;
+    const R=6371000, brng=toRad(headingDeg), d=meters;
     const lat1=toRad(lat), lon1=toRad(lon);
     const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d/R) + Math.cos(lat1)*Math.sin(d/R)*Math.cos(brng));
     const lon2 = lon1 + Math.atan2(Math.sin(brng)*Math.sin(d/R)*Math.cos(lat1), Math.cos(d/R)-Math.sin(lat1)*Math.sin(lat2));
@@ -543,25 +549,18 @@
     return (toDeg(Math.atan2(y,x))+360)%360;
   }
   async function makeEndDirectionVias(end, start){
-    // Compute bearing from END -> START, then create two vias ~60 m to the left and right of END
     const baseBear = bearingDegrees(end, start);
-    const leftHead = (baseBear + 90) % 360;
-    const rightHead = (baseBear + 270) % 360; // -90
-    const stepM = 60; // short nudge along carriageway direction
-    const rawLeft = destPoint(end.lat, end.lon, leftHead, stepM);
-    const rawRight = destPoint(end.lat, end.lon, rightHead, stepM);
-    // Snap both to road
-    const left = await snapIfNeeded(rawLeft);
-    const right = await snapIfNeeded(rawRight);
-    return [left, right];
+    const forwardRaw  = destPoint(end.lat, end.lon,  baseBear, 50);
+    const backwardRaw = destPoint(end.lat, end.lon, (baseBear+180)%360, 70);
+    const f = await snapIfNeeded(forwardRaw);
+    const b = await snapIfNeeded(backwardRaw);
+    return { forward: f, backward: b, baseBear };
   }
 
   async function planTwoWay(){
-    // Ensure inputs
     if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
-    if(!routeState.end){ const e=await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.'); setRoutePoint('end',e.lat,e.lon,e.label); }
+    if(!routeState.end){   const e=await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.');   setRoutePoint('end',e.lat,e.lon,e.label); }
 
-    // Snap start/end
     routeState.start = await snapIfNeeded(routeState.start);
     routeState.end   = await snapIfNeeded(routeState.end);
 
@@ -570,52 +569,56 @@
 
     clearRoutes();
 
-    // Build two “directional” vias off END
-    const [viaLeft, viaRight] = await makeEndDirectionVias(END, START);
+    const { forward, backward, baseBear } = await makeEndDirectionVias(END, START);
 
-    // We route FROM END TO START (as requested)
+    // FROM END → START
     const origin = END, dest = START;
 
     const results = [];
 
-    // OSRM left/right
-    const osrmLeft  = await fetchOSRM(origin, dest, [viaLeft]);
-    if (osrmLeft)  results.push(osrmLeft);
-    const osrmRight = await fetchOSRM(origin, dest, [viaRight]);
-    if (osrmRight) results.push(osrmRight);
+    // OSRM forward (towards START)
+    const osrmForward = await fetchOSRM(
+      origin, dest, [forward],
+      [{angle: baseBear, range: 40}, null, null]
+    );
+    if (osrmForward) results.push(osrmForward);
 
-    // Google left/right (only if enabled)
+    // OSRM backward (away from START = opposite direction)
+    const osrmBackward = await fetchOSRM(
+      origin, dest, [backward],
+      [{angle: (baseBear+180)%360, range: 40}, null, null]
+    );
+    if (osrmBackward) results.push(osrmBackward);
+
+    // Google forward/backward (no bearings support)
     if (elUseGoogle.checked){
-      const gLeft  = await fetchGoogle(origin, dest, [viaLeft]);
-      if (gLeft)  results.push(gLeft);
-      const gRight = await fetchGoogle(origin, dest, [viaRight]);
-      if (gRight) results.push(gRight);
+      const gF = await fetchGoogle(origin, dest, [forward]);
+      if (gF) results.push(gF);
+      const gB = await fetchGoogle(origin, dest, [backward]);
+      if (gB) results.push(gB);
     }
 
     if (!results.length){ alert('No routes found. Try moving END/START to the nearest road.'); return; }
 
-    // Keep only first 2 of each provider, in duration order
+    // Keep exactly two per provider (fastest first)
     const byProv = { OSRM:[], Google:[] };
     for (const r of results) byProv[r.provider]?.push(r);
-    for (const key of Object.keys(byProv)) byProv[key].sort((a,b)=>a.duration-b.duration);
+    for (const k of Object.keys(byProv)) byProv[k].sort((a,b)=>a.duration-b.duration);
 
     const finalRoutes = [
       ...byProv.OSRM.slice(0,2),
       ...byProv.Google.slice(0,2)
     ].filter(Boolean);
 
-    // Deduplicate by shape
     const seen = new Set(); let paletteIndex=0;
-    finalRoutes.forEach(rt=>{
+    for (const rt of finalRoutes){
       const key = rt.provider[0] + ':' + hashCoords(rt.coords);
-      if (seen.has(key)) return;
+      if (seen.has(key)) continue;
       seen.add(key);
       addRouteToUI(rt.coords, {provider:rt.provider, distance:rt.distance, duration:rt.duration}, paletteIndex++);
-    });
-
+    }
     if (routeState.polylines.length) setActiveRoute(0);
   }
-  // === END TWO-WAY OVERRIDE ===
 
   // Copy/Use/Zoom
   function getActiveRouteCoords(){ const idx=routeState.activeIdx; if(idx==null||idx<0) return null; const pl=routeState.polylines[idx]; if(!pl) return null; const latlngs=pl.getLatLngs(); return Array.isArray(latlngs[0])?latlngs.flat():latlngs; }
@@ -629,8 +632,8 @@
     map.fitBounds(bounds, {padding:[30,30]});
   });
 
-  // Hook buttons
-  byId('btn-route').addEventListener('click', ()=>{ planTwoWay(); });     // << use our 2-way logic
+  // Hook buttons (use two-way logic)
+  byId('btn-route').addEventListener('click', ()=>{ planTwoWay(); });
   byId('btn-clear-route').addEventListener('click', ()=>{ clearRoutes(); });
 
   // Initial info
