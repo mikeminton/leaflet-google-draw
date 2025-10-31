@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + Car Navigation — Multi‑Corridor Alternatives (Road‑True)</title>
+  <title>Leaflet + Car Navigation — Multi-Corridor Alternatives (Road-True)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
 
@@ -131,7 +131,7 @@
 
     <span class="spacer"></span>
 
-    <!-- NEW: Multi‑corridor exploration controls -->
+    <!-- NEW: Multi-corridor exploration controls (ignored by logic on purpose) -->
     <label title="Explore extra corridors by inserting snapped via control points">
       <input type="checkbox" id="explore-corridors" checked> Explore
     </label>
@@ -166,7 +166,7 @@
         <button id="btn-copy-selected" class="btn" title="Copy selected route coordinates">Copy Coords</button>
         <button id="btn-zoom-all" class="btn" title="Zoom to all routes">Zoom All</button>
       </div>
-      <div class="row" style="opacity:.8">Road‑true geometry. Press <b>P</b> to toggle dock. Right‑click to set Start/End, Ctrl+Click to add a Via.</div>
+      <div class="row" style="opacity:.8">Road-true geometry. Press <b>P</b> to toggle dock. Right-click to set Start/End, Ctrl+Click to add a Via.</div>
     </div>
 
     <div class="card infobox" id="info">
@@ -174,7 +174,7 @@
       <div class="row">Postcode: <code id="postcode">—</code></div>
       <div class="row">Lat/Lon: <code id="latlon">—</code></div>
       <div class="row">Easting/Northing: <code id="en">—</code></div>
-      <div class="row" style="opacity:.8">Shift+Click: drop pin • Ctrl+Click: add via • Alt+Click: Street View • Right‑click: set Start/End</div>
+      <div class="row" style="opacity:.8">Shift+Click: drop pin • Ctrl+Click: add via • Alt+Click: Street View • Right-click: set Start/End</div>
     </div>
   </div>
 
@@ -277,7 +277,7 @@
     L.control.layers({ "Esri Satellite": esriImagery, "OSM Streets": osmStreets }, { "Esri Labels (Hybrid)": esriLabels }, { collapsed: false }).addTo(map);
   }
 
-  // Info panel plumbing (now in dock)
+  // Info panel plumbing
   const elPostcode = byId('postcode'), elLatLon = byId('latlon'), elEN = byId('en');
   function normalizeUKPostcode(str){ if(!str) return null; const s=str.toUpperCase().replace(/\s+/g,''); return /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(s)?s:null; }
   async function updateInfo(lat,lon){
@@ -352,15 +352,13 @@
   byId('btn-sv-pin').addEventListener('click',()=>{ const ll=pin.getLatLng(); openSVAt(ll.lat,ll.lng); });
   map.on('contextmenu', e=>{ if(!routeState.start) setRoutePoint('start',e.latlng.lat,e.latlng.lng,'Start'); else setRoutePoint('end',e.latlng.lat,e.latlng.lng,'End'); });
 
-  // ---------- Routing (Car, road‑true) with Multi‑Corridor exploration ----------
+  // ---------- Routing (Car, road-true) ----------
   const routeLayer=L.layerGroup().addTo(map);
   let startMarker=null, endMarker=null;
   const elRS=byId('route-start'), elRE=byId('route-end'), elUseGoogle=byId('use-google');
-  const elExplore=byId('explore-corridors'), elVarCount=byId('variant-count'), elBreadth=byId('variant-breadth');
   const rList=byId('r-list');
   const btnPinStart=byId('btn-pin-start'), btnPinEnd=byId('btn-pin-end'), btnSwap=byId('btn-swap'), btnRoute=byId('btn-route'), btnClearRt=byId('btn-clear-route');
   const btnUseSelected=byId('btn-use-selected'), btnCopySelected=byId('btn-copy-selected'), btnZoomAll=byId('btn-zoom-all');
-  const chkAvoidHwy=byId('avoid-hwy'), chkAvoidTolls=byId('avoid-tolls'), chkAvoidFerries=byId('avoid-ferries');
   const viasWrap=byId('vias'), btnClearVias=byId('clear-vias');
 
   const routeState={ start:null, end:null, polylines:[], labels:[], meta:[], activeIdx:-1, vias:[], viaMarkers:[] };
@@ -379,6 +377,7 @@
   async function snapIfNeeded(obj){ const s=await osrmNearest(obj.lat,obj.lon); return { lat:s.lat, lon:s.lon, label: obj.label }; }
 
   function renderVias(){
+    // Keep UI, but we won’t use manual vias in the 2-way override
     viasWrap.innerHTML='';
     routeState.vias.forEach((v,i)=>{
       const chip=document.createElement('span'); chip.className='via-chip'; chip.innerHTML=`Via ${i+1} <button title="remove">✕</button>`;
@@ -420,16 +419,16 @@
 
   function clearRoutes(){ routeState.polylines.forEach(pl=>routeLayer.removeLayer(pl)); routeState.labels.forEach(lb=>routeLayer.removeLayer(lb)); routeState.polylines=[]; routeState.labels=[]; routeState.meta=[]; routeState.activeIdx=-1; rList.innerHTML=''; }
 
-  // Providers
-  async function fetchOSRM(start, end, vias, avoidFerries){
-    const coords = [[start.lon,start.lat], ...vias.map(v=>[v.lon,v.lat]), [end.lon,end.lat]]
+  // Providers (request a SINGLE best route each time)
+  async function fetchOSRM(origin, dest, vias){
+    const coords = [[origin.lon,origin.lat], ...vias.map(v=>[v.lon,v.lat]), [dest.lon,dest.lat]]
       .map(pair=>pair.join(',')).join(';');
-    const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'true', steps:'true' });
-    if (avoidFerries) params.set('exclude','ferry');
+    const params = new URLSearchParams({ overview:'full', geometries:'geojson', alternatives:'false', steps:'true' });
     const url = `https://router.project-osrm.org/route/v1/driving/${coords}?${params}`;
     const j = await fetch(url).then(r=>r.json()).catch(()=>null);
-    if (!j||!j.routes) return [];
-    return j.routes.map(rt=>({ provider:'OSRM', tag: vias.length?`via(${vias.length})`:'base', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) }));
+    if (!j||!j.routes) return null;
+    const rt = j.routes[0];
+    return { provider:'OSRM', distance:rt.distance, duration:rt.duration, coords: rt.geometry.coordinates.map(([lon,lat])=>[lat,lon]) };
   }
 
   function googleRouteToFullPath(route){
@@ -446,28 +445,26 @@
     return pts;
   }
 
-  async function fetchGoogle(start, end, vias, avoids){
-    if (!window.google?.maps) return [];
+  async function fetchGoogle(origin, dest, vias){
+    if (!window.google?.maps) return null;
     const svc = new google.maps.DirectionsService();
     const req = {
-      origin: {lat:start.lat, lng:start.lon},
-      destination: {lat:end.lat, lng:end.lon},
+      origin: {lat:origin.lat, lng:origin.lon},
+      destination: {lat:dest.lat, lng:dest.lon},
       travelMode: 'DRIVING',
-      provideRouteAlternatives: true
+      provideRouteAlternatives: false,
     };
     if (vias && vias.length){
       req.waypoints = vias.map(v=>({ location:{lat:v.lat, lng:v.lon}, stopover:false }));
     }
-    if (avoids.length) req.avoid = avoids;
     const res = await new Promise(resolve => svc.route(req,(r,st)=>resolve(st==='OK'?r:null)));
-    if (!res?.routes) return [];
-    return res.routes.map(r=>{
-      const path = googleRouteToFullPath(r);
-      // Combine legs to measure
-      let distance=0, duration=0;
-      (r.legs||[]).forEach(leg=>{ distance+=(leg.distance?.value||0); duration+=(leg.duration?.value||0); });
-      return { provider:'Google', tag: vias.length?`via(${vias.length})`:'base', distance, duration, coords: path };
-    });
+    if (!res?.routes?.length) return null;
+    const r = res.routes[0];
+    const path = googleRouteToFullPath(r);
+    // combine legs for totals
+    let distance=0, duration=0;
+    (r.legs||[]).forEach(leg=>{ distance+=(leg.distance?.value||0); duration+=(leg.duration?.value||0); });
+    return { provider:'Google', distance, duration, coords: path };
   }
 
   function hashCoords(coords){ const rounded = coords.map(ll=>[+ll[0].toFixed(5), +ll[1].toFixed(5)]); return JSON.stringify([rounded.length, rounded.slice(0,200)]); }
@@ -493,7 +490,7 @@
     const km=(meta.distance/1000).toFixed(2);
     const mins=Math.round(meta.duration/60); const hrs=Math.floor(mins/60), rem=mins%60; const durTxt=hrs?`${hrs}h ${rem}m`:`${mins} min`;
 
-    const idx = routeState.polylines.length; // capture index BEFORE pushing
+    const idx = routeState.polylines.length;
     const item=document.createElement('div'); item.className='route-item';
     item.innerHTML=`<div class="route-swatch" style="background:${color}"></div>
       <div><b>${idx+1}.</b> ${km} km • ${durTxt}
@@ -525,115 +522,100 @@
     return null;
   }
 
-  // Helpers for corridor vias
-  function metersToDegLat(m){ return m/111320; }
-  function metersToDegLon(m,lat){ return m/(111320*Math.cos((lat*Math.PI)/180)); }
-
-  function generateCorridorVias(start,end,count,breadth){
-    // Build up to `count` via sets by placing two control points at 1/3 and 2/3,
-    // offset alternately left/right with varying magnitude.
-    const result=[];
-    const lat1=start.lat, lon1=start.lon, lat2=end.lat, lon2=end.lon;
-    const dx = lon2 - lon1, dy = lat2 - lat1;
-    const L = Math.hypot(dx,dy)||1;
-    const ux = dx/L, uy = dy/L; // unit vector along line
-    // Left/right perpendicular (in lat/lon space; lon scaled later)
-    const px = -uy, py = ux;
-
-    for (let i=0;i<count;i++){
-      const frac1 = 0.33, frac2 = 0.67;
-      const side = (i%2===0) ? 1 : -1;
-      const scale = 0.5 + (i/Math.max(count-1,1)); // 0.5 .. 1.5
-      const m = breadth * scale; // meters
-      const dlat = metersToDegLat(m*side*1.0);
-      const dlon1 = metersToDegLon(m*side*1.0, lat1 + dy*frac1);
-      const dlon2 = metersToDegLon(m*side*1.0, lat1 + dy*frac2);
-
-      // Base points along the straight line
-      const b1 = { lat: lat1 + dy*frac1, lon: lon1 + dx*frac1 };
-      const b2 = { lat: lat1 + dy*frac2, lon: lon1 + dx*frac2 };
-
-      // Offset perpendicular
-      const via1 = { lat: b1.lat + dlat*py, lon: b1.lon + dlon1*px };
-      const via2 = { lat: b2.lat + dlat*py, lon: b2.lon + dlon2*px };
-
-      result.push([via1, via2]);
-    }
-    return result;
+  // === TWO-WAY ROUTING OVERRIDE (from END -> START, two directions off END) ===
+  function toRad(d){ return d*Math.PI/180; }
+  function toDeg(r){ return r*180/Math.PI; }
+  function destPoint(lat, lon, headingDeg, meters){
+    // Simple geodesic step using equirectangular approximation (fine at small distances)
+    const R=6371000;
+    const brng=toRad(headingDeg);
+    const d=meters;
+    const lat1=toRad(lat), lon1=toRad(lon);
+    const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d/R) + Math.cos(lat1)*Math.sin(d/R)*Math.cos(brng));
+    const lon2 = lon1 + Math.atan2(Math.sin(brng)*Math.sin(d/R)*Math.cos(lat1), Math.cos(d/R)-Math.sin(lat1)*Math.sin(lat2));
+    return { lat: toDeg(lat2), lon: ((toDeg(lon2)+540)%360)-180 };
+  }
+  function bearingDegrees(from, to){
+    const φ1=toRad(from.lat), φ2=toRad(to.lat);
+    const λ1=toRad(from.lon), λ2=toRad(to.lon);
+    const y=Math.sin(λ2-λ1)*Math.cos(φ2);
+    const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+    return (toDeg(Math.atan2(y,x))+360)%360;
+  }
+  async function makeEndDirectionVias(end, start){
+    // Compute bearing from END -> START, then create two vias ~60 m to the left and right of END
+    const baseBear = bearingDegrees(end, start);
+    const leftHead = (baseBear + 90) % 360;
+    const rightHead = (baseBear + 270) % 360; // -90
+    const stepM = 60; // short nudge along carriageway direction
+    const rawLeft = destPoint(end.lat, end.lon, leftHead, stepM);
+    const rawRight = destPoint(end.lat, end.lon, rightHead, stepM);
+    // Snap both to road
+    const left = await snapIfNeeded(rawLeft);
+    const right = await snapIfNeeded(rawRight);
+    return [left, right];
   }
 
-  async function planWithVias(start,end,viaList,avoids){
-    // viaList = array of [via1, via2] (or single via) sets
-    const all=[];
-    // First, provider's own alternatives without our vias:
-    all.push({ label:'base', vias: [] });
-    for (const vs of viaList){
-      all.push({ label:`cvias(${vs.length})`, vias: vs });
+  async function planTwoWay(){
+    // Ensure inputs
+    if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
+    if(!routeState.end){ const e=await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.'); setRoutePoint('end',e.lat,e.lon,e.label); }
+
+    // Snap start/end
+    routeState.start = await snapIfNeeded(routeState.start);
+    routeState.end   = await snapIfNeeded(routeState.end);
+
+    const START = routeState.start;
+    const END   = routeState.end;
+
+    clearRoutes();
+
+    // Build two “directional” vias off END
+    const [viaLeft, viaRight] = await makeEndDirectionVias(END, START);
+
+    // We route FROM END TO START (as requested)
+    const origin = END, dest = START;
+
+    const results = [];
+
+    // OSRM left/right
+    const osrmLeft  = await fetchOSRM(origin, dest, [viaLeft]);
+    if (osrmLeft)  results.push(osrmLeft);
+    const osrmRight = await fetchOSRM(origin, dest, [viaRight]);
+    if (osrmRight) results.push(osrmRight);
+
+    // Google left/right (only if enabled)
+    if (elUseGoogle.checked){
+      const gLeft  = await fetchGoogle(origin, dest, [viaLeft]);
+      if (gLeft)  results.push(gLeft);
+      const gRight = await fetchGoogle(origin, dest, [viaRight]);
+      if (gRight) results.push(gRight);
     }
-    let routes=[];
-    for (const bucket of all){
-      // Snap vias
-      const snapped = [];
-      for (const v of bucket.vias){
-        const s = await snapIfNeeded({lat:v.lat, lon:v.lon, label:'corridor'});
-        snapped.push(s);
-      }
-      // OSRM
-      const osrmR = await fetchOSRM(start, end, snapped, avoids.includes('FERRIES'));
-      routes = routes.concat(osrmR);
-      // Google
-      if (elUseGoogle.checked){
-        const gR = await fetchGoogle(start, end, snapped, avoids.filter(a=>a!=='FERRIES'));
-        routes = routes.concat(gR);
-      }
-    }
-    return routes;
+
+    if (!results.length){ alert('No routes found. Try moving END/START to the nearest road.'); return; }
+
+    // Keep only first 2 of each provider, in duration order
+    const byProv = { OSRM:[], Google:[] };
+    for (const r of results) byProv[r.provider]?.push(r);
+    for (const key of Object.keys(byProv)) byProv[key].sort((a,b)=>a.duration-b.duration);
+
+    const finalRoutes = [
+      ...byProv.OSRM.slice(0,2),
+      ...byProv.Google.slice(0,2)
+    ].filter(Boolean);
+
+    // Deduplicate by shape
+    const seen = new Set(); let paletteIndex=0;
+    finalRoutes.forEach(rt=>{
+      const key = rt.provider[0] + ':' + hashCoords(rt.coords);
+      if (seen.has(key)) return;
+      seen.add(key);
+      addRouteToUI(rt.coords, {provider:rt.provider, distance:rt.distance, duration:rt.duration}, paletteIndex++);
+    });
+
+    if (routeState.polylines.length) setActiveRoute(0);
   }
-
-  async function planRoutes(){
-    try{
-      if(!routeState.start){ const s=await resolvePoint(elRS.value); if(!s) return alert('Set a valid Start.'); setRoutePoint('start',s.lat,s.lon,s.label); }
-      if(!routeState.end){ const e=await resolvePoint(elRE.value); if(!e) return alert('Set a valid End.'); setRoutePoint('end',e.lat,e.lon,e.label); }
-      // Snap start/end
-      routeState.start = await snapIfNeeded(routeState.start);
-      routeState.end   = await snapIfNeeded(routeState.end);
-
-      const {start,end}=routeState; if(!start||!end) return;
-      clearRoutes();
-
-      const avoids=[];
-      if (chkAvoidHwy.checked) avoids.push('HIGHWAYS');
-      if (chkAvoidTolls.checked) avoids.push('TOLLS');
-      if (chkAvoidFerries.checked) avoids.push('FERRIES');
-
-      // Build corridor candidates
-      let corridorSets = [];
-      if (elExplore.checked){
-        const count = Math.max(0, Math.min(12, parseInt(elVarCount.value||'0',10)));
-        const breadth = Math.max(100, Math.min(5000, parseInt(elBreadth.value||'1200',10)));
-        corridorSets = generateCorridorVias(start, end, count, breadth);
-      }
-
-      // Plan
-      let routes = await planWithVias(start, end, corridorSets, avoids);
-
-      if (!routes.length){ alert('No routes. Try increasing Breadth or adding one manual Via (Ctrl+Click) mid‑journey.'); return; }
-
-      // De‑duplicate by path shape + distance/duration
-      const seen = new Set(); let paletteIndex=0;
-      routes.sort((a,b)=>a.duration-b.duration); // fastest first
-      for (const rt of routes){
-        // hash by coarse geometry + provider
-        const key = rt.provider[0] + ':' + hashCoords(rt.coords);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        addRouteToUI(rt.coords, {provider:rt.provider, distance:rt.distance, duration:rt.duration}, paletteIndex++);
-      }
-      setActiveRoute(0);
-    }catch(err){
-      console.error(err); alert('Routing failed. Check points and try again.'); 
-    }
-  }
+  // === END TWO-WAY OVERRIDE ===
 
   // Copy/Use/Zoom
   function getActiveRouteCoords(){ const idx=routeState.activeIdx; if(idx==null||idx<0) return null; const pl=routeState.polylines[idx]; if(!pl) return null; const latlngs=pl.getLatLngs(); return Array.isArray(latlngs[0])?latlngs.flat():latlngs; }
@@ -647,7 +629,8 @@
     map.fitBounds(bounds, {padding:[30,30]});
   });
 
-  byId('btn-route').addEventListener('click', ()=>{ planRoutes(); });
+  // Hook buttons
+  byId('btn-route').addEventListener('click', ()=>{ planTwoWay(); });     // << use our 2-way logic
   byId('btn-clear-route').addEventListener('click', ()=>{ clearRoutes(); });
 
   // Initial info
